@@ -228,8 +228,12 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
                   <div className="text-sm text-blue-600">Pertanyaan</div>
                 </div>
                 <div className="p-4 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">{Math.round(totalTime / 60)}</div>
-                  <div className="text-sm text-green-600">Menit</div>
+                  <div className="text-2xl font-bold text-green-600">
+                    {totalTime >= 60 ? Math.round(totalTime / 60) : totalTime}
+                  </div>
+                  <div className="text-sm text-green-600">
+                    {totalTime >= 60 ? "Menit" : "Detik"}
+                  </div>
                 </div>
                 <div className="p-4 bg-purple-50 rounded-lg">
                   <div className="text-2xl font-bold text-purple-600">
@@ -306,7 +310,9 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
                   <div className="text-center p-3 bg-orange-50 rounded-lg">
                     <p className="font-semibold text-orange-800 mb-1">Practice Mode</p>
                     <p>• Navigasi bebas (back/next)</p>
-                    <p>• Total waktu: {Math.round(totalTime / 60)} menit</p>
+                    <p>• Total waktu: {totalTime >= 60
+                      ? `${Math.round(totalTime / 60)} menit`
+                      : `${totalTime} detik`}</p>
                     <p>• Belajar tanpa tekanan</p>
                   </div>
                 </div>

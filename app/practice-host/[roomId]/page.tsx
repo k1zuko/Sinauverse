@@ -24,15 +24,17 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
   const [gameState, setGameState] = useState<"waiting" | "playing" | "finished">("waiting")
   const [actionLoading, setActionLoading] = useState(false)
   const [questions, setQuestions] = useState<any[]>([])
+  const [playerProgress, setPlayerProgress] = useState<{ [key: string]: number }>({})
+  const [practiceTimeLeft, setPracticeTimeLeft] = useState(0)
 
   useEffect(() => {
-  if (!loading && user) {
-    fetchRoomData()
+    if (!loading && user) {
+      fetchRoomData()
 
-    const cleanup = subscribeToUpdates()
-    return cleanup
-  }
-}, [user, loading, resolvedParams.roomId])
+      const cleanup = subscribeToUpdates()
+      return cleanup
+    }
+  }, [user, loading, resolvedParams.roomId])
 
   const fetchRoomData = async () => {
     try {
@@ -104,6 +106,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
 
     if (data) {
       setParticipants(data)
+      fetchPlayerProgress()
     }
   }
 
@@ -120,7 +123,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
         },
         () => {
           fetchParticipants()
-        }
+        },
       )
       .subscribe()
 
@@ -137,7 +140,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
         (payload) => {
           const newData = payload.new as any
           setGameState(newData.status)
-        }
+        },
       )
       .subscribe()
 
@@ -147,7 +150,6 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
       supabase.removeChannel(roomChannel)
     }
   }
-
 
   const startGame = async () => {
     setActionLoading(true)
@@ -159,6 +161,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
         .update({
           status: "playing",
           started_at: new Date().toISOString(),
+          practice_started_at: new Date().toISOString(),
           current_question: 0,
           practice_total_time: totalTime,
         })
@@ -168,7 +171,9 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
 
       toast({
         title: "Practice Mode Dimulai!",
-        description: `Pemain memiliki ${Math.round(totalTime / 60)} menit untuk menyelesaikan semua soal`,
+        description: `Pemain memiliki ${totalTime >= 60
+          ? `${Math.round(totalTime / 60)} menit`
+          : `${totalTime} detik`} untuk menyelesaikan semua soal`,
       })
     } catch (error) {
       console.error("Error starting game:", error)
@@ -208,6 +213,58 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
       })
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  // Add this effect to calculate and maintain practice timer
+  useEffect(() => {
+    if (room?.mode === "practice" && room.practice_started_at && questions.length > 0) {
+      const totalTime = questions.reduce((acc, q) => acc + q.time_limit, 0)
+
+      const startTime = new Date(room.practice_started_at).getTime()
+      const now = Date.now()
+      const elapsed = Math.floor((now - startTime) / 1000)
+
+      const remaining = Math.max(totalTime - elapsed, 0)
+      setPracticeTimeLeft(remaining)
+
+      // Update timer every second
+      const timer = setInterval(() => {
+        const currentTime = Date.now()
+        const currentElapsed = Math.floor((currentTime - startTime) / 1000)
+        const currentRemaining = Math.max(totalTime - currentElapsed, 0)
+
+        setPracticeTimeLeft(currentRemaining)
+
+        if (currentRemaining === 0) {
+          clearInterval(timer)
+        }
+      }, 1000)
+
+      return () => clearInterval(timer)
+    }
+  }, [room, questions])
+
+  // Add function to fetch player progress
+  const fetchPlayerProgress = async () => {
+    if (!questions.length) return
+
+    try {
+      const { data: answers } = await supabase
+        .from("game_answers")
+        .select("participant_id")
+        .eq("room_id", resolvedParams.roomId)
+
+      if (answers) {
+        const progress: { [key: string]: number } = {}
+        participants.forEach((participant) => {
+          const participantAnswers = answers.filter((a) => a.participant_id === participant.id)
+          progress[participant.id] = participantAnswers.length
+        })
+        setPlayerProgress(progress)
+      }
+    } catch (error) {
+      console.error("Error fetching player progress:", error)
     }
   }
 
@@ -260,7 +317,10 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
           {gameState === "playing" && (
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span>Total Waktu: {Math.round(totalTime / 60)} menit</span>
+                <span>
+                  Waktu Tersisa: {Math.floor(practiceTimeLeft / 60)}:
+                  {(practiceTimeLeft % 60).toString().padStart(2, "0")}
+                </span>
                 <span>
                   Selesai: {finishedParticipants}/{participants.length} pemain
                 </span>
@@ -270,7 +330,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
                 className="h-2 bg-white/20"
               />
               <div className="text-xs opacity-75">
-                Mode Practice: Pemain dapat navigasi bebas dan menyelesaikan dalam waktu mereka sendiri
+                Mode Practice: Pemain dapat navigasi bebas • Siapa cepat dia duluan!
               </div>
             </div>
           )}
@@ -388,82 +448,116 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
               </CardHeader>
               <CardContent>
                 {participants.length === 0 ? (
-                  <div className="flex flex-col items-center gap-3 justify-center text-center py-8 text-gray-500">
-                    <Users className="w-12 h-12 mx-auto opacity-50" />
-                    <p>Belum ada pemain yang bergabung</p>
-                    <p className="text-sm">
-                      Bagikan kode room: <strong>{room.room_code}</strong>
-                    </p>
-                    <QRCodeSVG
-                      value={`${window.location.origin}/join?code=${room.room_code}`}
-                      size={100}
-                      bgColor="#ffffff"
-                      fgColor="#000000"
-                      level="H"
-                      className="mt-3"
-                    />
-                    <p className="text-xs text-black opacity-70">Scan untuk join practice</p>
-                  </div>
+                  null
                 ) : (
                   <div className="space-y-3">
-                    {participants.map((participant, index) => (
-                      <div
-                        key={participant.id}
-                        className={`flex items-center justify-between p-4 rounded-lg ${gameState === "finished"
+                    {participants.map((participant, index) => {
+                      const progress = playerProgress[participant.id] || 0
+                      const progressPercentage = questions.length > 0 ? (progress / questions.length) * 100 : 0
+
+                      return (
+                        <div
+                          key={participant.id}
+                          className={`p-4 rounded-lg border ${gameState === "finished"
                             ? index === 0
                               ? "bg-yellow-100 border-2 border-yellow-300"
                               : "bg-gray-50"
                             : participant.is_finished
                               ? "bg-green-50 border border-green-200"
                               : "bg-gray-50"
-                          }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${participant.is_finished
-                                ? "bg-green-500"
-                                : index === 0
-                                  ? "bg-yellow-500"
-                                  : index === 1
-                                    ? "bg-gray-400"
-                                    : index === 2
-                                      ? "bg-orange-500"
-                                      : "bg-gray-300"
-                              }`}
-                          >
-                            {participant.is_finished ? "✓" : index + 1}
-                          </div>
-                          <div>
-                            <p className="font-semibold flex items-center gap-2">
-                              {participant.nickname}
-                              {gameState === "finished" && index === 0 && <span className="text-yellow-600">👑</span>}
-                              {participant.is_finished && gameState === "playing" && (
-                                <CheckCircle className="w-4 h-4 text-green-600" />
-                              )}
-                            </p>
-                            <div className="flex items-center gap-4 text-xs text-gray-600">
-                              <span>Bergabung: {new Date(participant.joined_at).toLocaleTimeString()}</span>
-                              {gameState === "playing" && (
-                                <span
-                                  className={`px-2 py-1 rounded ${participant.is_finished
-                                      ? "bg-green-100 text-green-800"
-                                      : "bg-blue-100 text-blue-800"
-                                    }`}
-                                >
-                                  {participant.is_finished ? "✅ Selesai" : "📚 Belajar"}
-                                </span>
-                              )}
+                            }`}
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${participant.is_finished
+                                  ? "bg-green-500"
+                                  : index === 0
+                                    ? "bg-yellow-500"
+                                    : index === 1
+                                      ? "bg-gray-400"
+                                      : index === 2
+                                        ? "bg-orange-500"
+                                        : "bg-gray-300"
+                                  }`}
+                              >
+                                {participant.is_finished ? "✓" : index + 1}
+                              </div>
+                              <div>
+                                <p className="font-semibold flex items-center gap-2">
+                                  {participant.nickname}
+                                  {gameState === "finished" && index === 0 && (
+                                    <span className="text-yellow-600">👑</span>
+                                  )}
+                                  {participant.is_finished && gameState === "playing" && (
+                                    <CheckCircle className="w-4 h-4 text-green-600" />
+                                  )}
+                                </p>
+                                <div className="flex items-center gap-4 text-xs text-gray-600">
+                                  <span>Bergabung: {new Date(participant.joined_at).toLocaleTimeString()}</span>
+                                  {gameState === "playing" && (
+                                    <span
+                                      className={`px-2 py-1 rounded ${participant.is_finished
+                                        ? "bg-green-100 text-green-800"
+                                        : "bg-blue-100 text-blue-800"
+                                        }`}
+                                    >
+                                      {participant.is_finished ? "✅ Selesai" : "📚 Belajar"}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-lg">{participant.score.toLocaleString()}</p>
+                              <p className="text-sm text-gray-600">poin</p>
                             </div>
                           </div>
+
+                          {/* Progress Bar */}
+                          {gameState === "playing" && !participant.is_finished && (
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-xs text-gray-600">
+                                <span>
+                                  Progress: {progress}/{questions.length} soal
+                                </span>
+                                <span>{Math.round(progressPercentage)}%</span>
+                              </div>
+                              <Progress value={progressPercentage} className="h-2" />
+                            </div>
+                          )}
+
+                          {/* {participant.is_finished && (
+                            <div className="mt-2 text-xs text-green-600 font-medium">
+                              ✅ Selesai pada: {new Date(participant.finished_at).toLocaleTimeString()}
+                            </div>
+                          )} */}
                         </div>
-                        <div className="text-right">
-                          <p className="font-bold text-lg">{participant.score.toLocaleString()}</p>
-                          <p className="text-sm text-gray-600">poin</p>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <div className="flex flex-col items-center gap-3 justify-center text-center py-8 text-gray-500">
+                  <Users className="w-12 h-12 mx-auto opacity-50" />
+                  <p>Belum ada pemain yang bergabung</p>
+                  <p className="text-sm">
+                    Bagikan kode room: <strong>{room.room_code}</strong>
+                  </p>
+                  <QRCodeSVG
+                    value={`${window.location.origin}/join?code=${room.room_code}`}
+                    size={100}
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                    level="H"
+                    className="mt-3"
+                  />
+                  <p className="text-xs text-black opacity-70">Scan untuk join game</p>
+
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -497,7 +591,9 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
                     ))}
                     <div className="mt-4 p-3 bg-orange-50 rounded-lg">
                       <p className="text-sm font-semibold text-orange-800">Total Practice Time</p>
-                      <p className="text-lg font-bold text-orange-600">{Math.round(totalTime / 60)} menit</p>
+                      <p className="text-lg font-bold text-orange-600">{totalTime >= 60
+                        ? `${Math.round(totalTime / 60)} menit`
+                        : `${totalTime} detik`}</p>
                     </div>
                   </div>
                 )}

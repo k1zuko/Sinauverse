@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Trophy, Clock, Users, Home, ChevronLeft, ChevronRight, CheckCircle } from "lucide-react"
+import { Trophy, Clock, Users, Home, ChevronLeft, ChevronRight, CheckCircle, Badge } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 
@@ -405,7 +405,14 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     const question = questions[currentQuestion]
     const selectedOption = question.answer_options.find((opt: any) => opt.option_index === answerIndex)
     const isCorrect = selectedOption?.is_correct || false
-    const points = isCorrect ? question.points : 0
+
+    // Calculate speed-based points for practice mode
+    const startTime = new Date(room.practice_started_at).getTime()
+    const now = Date.now()
+    const totalElapsed = Math.floor((now - startTime) / 1000)
+    const totalTime = questions.reduce((acc, q) => acc + q.time_limit, 0)
+    const speedBonus = Math.max(0.1, (totalTime - totalElapsed) / totalTime)
+    const points = isCorrect ? Math.floor(question.points * speedBonus) : 0
 
     try {
       // Save or update answer
@@ -429,7 +436,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
             selected_option_id: selectedOption?.id,
             is_correct: isCorrect,
             points_earned: points,
-            answer_time: 0,
+            answer_time: totalElapsed,
           })
           .eq("id", existingAnswer.id)
 
@@ -437,22 +444,19 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
           console.error("Gagal update jawaban:", updateError)
         }
       } else {
-        const { error: insertError } = await supabase
-          .from("game_answers")
-          .insert({
-            room_id: resolvedParams.roomId,
-            participant_id: myParticipant.id,
-            question_id: question.id,
-            selected_option_id: selectedOption?.id,
-            is_correct: isCorrect,
-            points_earned: points,
-            answer_time: 0,
-          })
+        const { error: insertError } = await supabase.from("game_answers").insert({
+          room_id: resolvedParams.roomId,
+          participant_id: myParticipant.id,
+          question_id: question.id,
+          selected_option_id: selectedOption?.id,
+          is_correct: isCorrect,
+          points_earned: points,
+          answer_time: totalElapsed,
+        })
 
         if (insertError) {
           console.error("Gagal insert jawaban:", insertError)
         }
-
       }
     } catch (error) {
       console.error("Error saving practice answer:", error)
@@ -510,8 +514,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       const finishedCount = allParticipants?.filter((p) => p.is_finished).length || 0
 
       if (finishedCount === 1) {
-        // First to finish
-        // End the game for everyone
+        // First to finish - end the game for everyone
         await supabase
           .from("game_rooms")
           .update({
@@ -521,7 +524,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
           .eq("id", resolvedParams.roomId)
 
         toast({
-          title: "Game Berakhir",
+          title: "🎉 Anda Juara!",
           description: "Anda adalah yang pertama selesai! Game berakhir untuk semua pemain.",
         })
       }
@@ -536,17 +539,21 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
   }
 
   useEffect(() => {
-  if (room?.mode === "practice" && room.practice_started_at && questions.length > 0) {
-    const totalTime = questions.reduce((acc, q) => acc + q.time_limit, 0)
+    if (room?.mode === "practice" && room.practice_started_at && questions.length > 0) {
+      const totalTime = questions.reduce((acc, q) => acc + q.time_limit, 0)
 
-    const startTime = new Date(room.practice_started_at).getTime()
-    const now = Date.now()
-    const elapsed = Math.floor((now - startTime) / 1000)
+      const startTime = new Date(room.practice_started_at).getTime()
+      const now = Date.now()
+      const elapsed = Math.floor((now - startTime) / 1000)
 
-    const remaining = Math.max(totalTime - elapsed, 0)
-    setPracticeTimeLeft(remaining)
-  }
-}, [room, questions])
+      const remaining = Math.max(totalTime - elapsed, 0)
+      setPracticeTimeLeft(remaining)
+
+      if (remaining === 0 && !isFinished) {
+        handlePracticeTimeUp()
+      }
+    }
+  }, [room, questions, isFinished])
 
   const handlePracticeTimeUp = () => {
     toast({
@@ -746,37 +753,84 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
   if (gameState === "finished") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 to-blue-500 flex items-center justify-center p-4">
-        <div className="w-full max-w-2xl">
+        <div className="w-full max-w-4xl">
           <Card className="border-0 shadow-2xl">
-            <CardContent className="p-8 text-center">
-              <Trophy className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-              <h2 className="text-3xl font-bold mb-6">
-                {gameMode === "practice" ? "Practice Selesai!" : "Game Selesai!"}
-              </h2>
+            <CardContent className="p-8">
+              <div className="text-center mb-8">
+                <Trophy className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                <h2 className="text-3xl font-bold mb-6">
+                  {gameMode === "practice" ? "Practice Selesai!" : "Game Selesai!"}
+                </h2>
+              </div>
 
-              <div className="bg-gray-50 rounded-lg p-6 mb-6">
-                <h3 className="text-xl font-semibold mb-4">Leaderboard Final</h3>
-                <div className="space-y-3">
-                  {participants.slice(0, 5).map((participant, index) => (
-                    <div key={participant.id} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${index === 0
-                            ? "bg-yellow-500"
-                            : index === 1
-                              ? "bg-gray-400"
-                              : index === 2
-                                ? "bg-orange-500"
-                                : "bg-gray-300"
-                            }`}
-                        >
-                          {index + 1}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                {/* Leaderboard */}
+                <div className="bg-gray-50 rounded-lg p-6">
+                  <h3 className="text-xl font-semibold mb-4">🏆 Leaderboard Final</h3>
+                  <div className="space-y-3">
+                    {participants.slice(0, 5).map((participant, index) => (
+                      <div key={participant.id} className="flex items-center justify-between p-3 bg-white rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${index === 0
+                                ? "bg-yellow-500"
+                                : index === 1
+                                  ? "bg-gray-400"
+                                  : index === 2
+                                    ? "bg-orange-500"
+                                    : "bg-gray-300"
+                              }`}
+                          >
+                            {index + 1}
+                          </div>
+                          <span className="font-semibold">{participant.nickname}</span>
+                          {index === 0 && <span className="text-yellow-600">👑</span>}
                         </div>
-                        <span className="font-semibold">{participant.nickname}</span>
+                        <span className="font-bold">{participant.score.toLocaleString()}</span>
                       </div>
-                      <span className="font-bold">{participant.score.toLocaleString()}</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </div>
+
+                {/* Question Recap */}
+                <div className="bg-gray-50 rounded-lg p-6 max-h-96 overflow-y-auto">
+                  <h3 className="text-xl font-semibold mb-4">📝 Rekap Soal & Jawaban</h3>
+                  <div className="space-y-4">
+                    {questions.map((question, qIndex) => {
+                      const myAnswer = practiceAnswers[qIndex]
+                      const correctAnswer = question.answer_options.find((opt: any) => opt.is_correct)
+                      const mySelectedOption = question.answer_options.find((opt: any) => opt.option_index === myAnswer)
+
+                      return (
+                        <div key={question.id} className="bg-white rounded-lg p-4 border">
+                          <div className="flex items-start gap-2 mb-3">
+                            <Badge variant="secondary" className="text-xs">
+                              {qIndex + 1}
+                            </Badge>
+                            <p className="text-sm font-medium">{question.question_text}</p>
+                          </div>
+
+                          <div className="ml-6 space-y-2 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-green-600 font-semibold">✓ Benar:</span>
+                              <span>{correctAnswer?.option_text}</span>
+                            </div>
+
+                            {myAnswer !== undefined && (
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`font-semibold ${mySelectedOption?.is_correct ? "text-green-600" : "text-red-600"}`}
+                                >
+                                  {mySelectedOption?.is_correct ? "✓" : "✗"} Jawaban Anda:
+                                </span>
+                                <span>{mySelectedOption?.option_text}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -793,10 +847,12 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
                 </div>
               )}
 
-              <Button onClick={() => router.push("/dashboard")} className="bg-blue-600 hover:bg-blue-700">
-                <Home className="w-4 h-4 mr-2" />
-                Kembali ke Dashboard
-              </Button>
+              <div className="text-center">
+                <Button onClick={() => router.push("/dashboard")} className="bg-blue-600 hover:bg-blue-700">
+                  <Home className="w-4 h-4 mr-2" />
+                  Kembali ke Dashboard
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -823,6 +879,9 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       const secs = seconds % 60
       return `${mins}:${secs.toString().padStart(2, "0")}`
     }
+
+    // Check if all questions are answered
+    const allQuestionsAnswered = questions.every((_, index) => practiceAnswers[index] !== undefined)
 
     return (
       <div className="min-h-screen bg-gray-100">
@@ -908,11 +967,17 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
                     </Button>
 
                     <div className="flex gap-2">
-                      {!isFinished && (
+                      {!isFinished && allQuestionsAnswered && (
                         <Button onClick={finishPractice} className="bg-green-600 hover:bg-green-700 px-8">
                           <CheckCircle className="w-4 h-4 mr-2" />
                           Selesai Practice
                         </Button>
+                      )}
+                      {!isFinished && !allQuestionsAnswered && (
+                        <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-lg text-sm">
+                          Jawab semua soal untuk menyelesaikan practice ({Object.keys(practiceAnswers).length}/
+                          {questions.length})
+                        </div>
                       )}
                     </div>
 
@@ -936,10 +1001,10 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
                           onClick={() => !isFinished && setCurrentQuestion(index)}
                           disabled={isFinished}
                           className={`w-8 h-8 rounded-full text-xs font-bold transition-all ${index === currentQuestion
-                            ? "bg-orange-500 text-white"
-                            : practiceAnswers[index] !== undefined
-                              ? "bg-green-500 text-white"
-                              : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                              ? "bg-orange-500 text-white"
+                              : practiceAnswers[index] !== undefined
+                                ? "bg-green-500 text-white"
+                                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
                             }`}
                         >
                           {index + 1}
@@ -979,14 +1044,14 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
                         <div className="flex items-center gap-2">
                           <div
                             className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${participant.is_finished
-                              ? "bg-green-500"
-                              : index === 0
-                                ? "bg-yellow-500"
-                                : index === 1
-                                  ? "bg-gray-400"
-                                  : index === 2
-                                    ? "bg-orange-500"
-                                    : "bg-gray-300"
+                                ? "bg-green-500"
+                                : index === 0
+                                  ? "bg-yellow-500"
+                                  : index === 1
+                                    ? "bg-gray-400"
+                                    : index === 2
+                                      ? "bg-orange-500"
+                                      : "bg-gray-300"
                               }`}
                           >
                             {participant.is_finished ? "✓" : index + 1}
@@ -1130,12 +1195,12 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
                       <div className="flex items-center gap-2">
                         <div
                           className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${index === 0
-                            ? "bg-yellow-500"
-                            : index === 1
-                              ? "bg-gray-400"
-                              : index === 2
-                                ? "bg-orange-500"
-                                : "bg-gray-300"
+                              ? "bg-yellow-500"
+                              : index === 1
+                                ? "bg-gray-400"
+                                : index === 2
+                                  ? "bg-orange-500"
+                                  : "bg-gray-300"
                             }`}
                         >
                           {index + 1}
