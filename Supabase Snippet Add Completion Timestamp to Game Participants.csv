@@ -1,0 +1,10 @@
+oid,tgrelid,tgparentid,tgname,tgfoid,tgtype,tgenabled,tgisinternal,tgconstrrelid,tgconstrindid,tgconstraint,tgdeferrable,tginitdeferred,tgnargs,tgattr,tgargs,tgqual,tgoldtable,tgnewtable
+17395,17384,0,RI_ConstraintTrigger_c_17395,1644,5,O,true,17334,17346,17392,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null
+17396,17384,0,RI_ConstraintTrigger_c_17396,1645,17,O,true,17334,17346,17392,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null
+17400,17384,0,RI_ConstraintTrigger_c_17400,1644,5,O,true,17360,17368,17397,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null
+17401,17384,0,RI_ConstraintTrigger_c_17401,1645,17,O,true,17360,17368,17397,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null
+17405,17384,0,RI_ConstraintTrigger_c_17405,1644,5,O,true,17301,17312,17402,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null
+17406,17384,0,RI_ConstraintTrigger_c_17406,1645,17,O,true,17301,17312,17402,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null
+17410,17384,0,RI_ConstraintTrigger_c_17410,1644,5,O,true,17319,17327,17407,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null
+17411,17384,0,RI_ConstraintTrigger_c_17411,1645,17,O,true,17319,17327,17407,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null
+18796,17384,0,trigger_update_answer_statistics,18795,5,O,false,0,0,0,false,false,0,,"{""type"":""Buffer"",""data"":[]}",null,null,null

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Play, Users, Trophy, Copy, Check } from "lucide-react"
+import { Play, Users, Trophy, Copy, Check, BookOpen } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
@@ -73,14 +73,13 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
     }
   }
 
-  const createGameRoom = async (isSolo = false) => {
+  const createGameRoom = async (mode: "solo" | "multi" | "practice") => {
     if (!quiz) return
 
     setCreating(true)
     setError("")
 
     try {
-      // Use database function to generate unique room code
       const { data: codeData, error: codeError } = await supabase.rpc("generate_room_code")
 
       if (codeError) {
@@ -98,10 +97,11 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
           room_code: roomCode,
           quiz_id: quiz.id,
           host_id: user!.id,
-          is_solo: isSolo,
+          is_solo: mode === "solo",
+          mode: mode,
           status: "waiting",
         })
-        .select('id')
+        .select("id")
         .single()
 
       if (roomError) {
@@ -111,8 +111,8 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
         return
       }
 
-      if (isSolo) {
-        // For solo game, add the user as participant and start immediately
+      // Tambahkan peserta jika solo
+      if (mode === "solo") {
         const { error: participantError } = await supabase.from("game_participants").insert({
           room_id: room.id,
           user_id: user!.id,
@@ -126,10 +126,7 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
           return
         }
 
-        const { error: updateError } = await supabase
-          .from("game_rooms")
-          .update({ status: "playing" })
-          .eq("id", room.id)
+        const { error: updateError } = await supabase.from("game_rooms").update({ status: "playing" }).eq("id", room.id)
 
         if (updateError) {
           setError("Gagal memulai game solo")
@@ -137,16 +134,20 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
           return
         }
 
-
-        // Redirect to solo game
         router.push(`/game/${room.id}`)
-      } else {
-        // For multiplayer, redirect to host lobby
+      }
+
+      if (mode === "multi") {
         router.push(`/host/${room.id}`)
+      }
+
+      if (mode === "practice") {
+        router.push(`/practice-host/${room.id}`)
       }
     } catch (err) {
       console.error("Unexpected error:", err)
       setError("Terjadi kesalahan yang tidak terduga")
+    } finally {
       setCreating(false)
     }
   }
@@ -188,6 +189,8 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
     )
   }
 
+  const totalTime = quiz.questions?.reduce((acc: number, q: any) => acc + q.time_limit, 0) || 0
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400">
       {/* Header */}
@@ -208,18 +211,6 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
             </Alert>
           )}
 
-          {/* {process.env.NODE_ENV === "development" && (
-            <div className="mb-4 p-4 bg-gray-100 rounded text-sm">
-              <p>
-                <strong>Debug Info:</strong>
-              </p>
-              <p>User ID: {user?.id}</p>
-              <p>Quiz ID: {resolvedParams.quizId}</p>
-              <p>Quiz loaded: {quiz ? "Yes" : "No"}</p>
-              <p>Creating: {creating ? "Yes" : "No"}</p>
-            </div>
-          )} */}
-
           <Card className="border-0 shadow-2xl">
             <CardHeader className="text-center">
               <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -237,9 +228,7 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
                   <div className="text-sm text-blue-600">Pertanyaan</div>
                 </div>
                 <div className="p-4 bg-green-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">
-                    {Math.round((quiz.questions?.reduce((acc: number, q: any) => acc + q.time_limit, 0) || 0) / 60)}
-                  </div>
+                  <div className="text-2xl font-bold text-green-600">{Math.round(totalTime / 60)}</div>
                   <div className="text-sm text-green-600">Menit</div>
                 </div>
                 <div className="p-4 bg-purple-50 rounded-lg">
@@ -262,28 +251,64 @@ export default function PlayQuizPage({ params }: { params: Promise<{ quizId: str
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-center">Pilih Mode Permainan</h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Solo Mode */}
                   <Button
-                    onClick={() => createGameRoom(true)}
+                    onClick={() => createGameRoom("solo")}
                     disabled={creating}
-                    className="h-20 flex-col bg-blue-600 hover:bg-blue-700"
+                    className="h-30 flex flex-col bg-blue-600 hover:bg-blue-700"
                   >
                     <Play className="w-6 h-6 mb-2" />
                     <span className="font-semibold">Main Solo</span>
                     <span className="text-xs opacity-90">Bermain sendiri</span>
+                    <span className="text-xs opacity-75">Timed & Competitive</span>
                   </Button>
 
                   {/* Multiplayer Mode */}
                   <Button
-                    onClick={() => createGameRoom(false)}
+                    onClick={() => createGameRoom("multi")}
                     disabled={creating}
-                    className="h-20 flex-col bg-green-600 hover:bg-green-700"
+                    className="h-30 flex-col bg-green-600 hover:bg-green-700"
                   >
                     <Users className="w-6 h-6 mb-2" />
                     <span className="font-semibold">Multiplayer</span>
                     <span className="text-xs opacity-90">Bermain dengan teman</span>
+                    <span className="text-xs opacity-75">Live & Competitive</span>
                   </Button>
+
+                  {/* Practice Mode */}
+                  <Button
+                    onClick={() => createGameRoom("practice")}
+                    disabled={creating}
+                    className="h-30 flex-col bg-orange-600 hover:bg-orange-700"
+                  >
+                    <BookOpen className="w-6 h-6 mb-2" />
+                    <span className="font-semibold">Practice</span>
+                    <span className="text-xs opacity-90">Belajar santai</span>
+                    <span className="text-xs opacity-75">Navigate & Learn</span>
+                  </Button>
+                </div>
+
+                {/* Mode Descriptions */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-gray-600">
+                  <div className="text-center p-3 bg-blue-50 rounded-lg">
+                    <p className="font-semibold text-blue-800 mb-1">Solo Mode</p>
+                    <p>• Timer per soal</p>
+                    <p>• Skor berdasarkan kecepatan</p>
+                    <p>• Langsung main</p>
+                  </div>
+                  <div className="text-center p-3 bg-green-50 rounded-lg">
+                    <p className="font-semibold text-green-800 mb-1">Multiplayer</p>
+                    <p>• Real-time dengan teman</p>
+                    <p>• Leaderboard live</p>
+                    <p>• Host kontrol game</p>
+                  </div>
+                  <div className="text-center p-3 bg-orange-50 rounded-lg">
+                    <p className="font-semibold text-orange-800 mb-1">Practice Mode</p>
+                    <p>• Navigasi bebas (back/next)</p>
+                    <p>• Total waktu: {Math.round(totalTime / 60)} menit</p>
+                    <p>• Belajar tanpa tekanan</p>
+                  </div>
                 </div>
               </div>
 
