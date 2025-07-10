@@ -10,6 +10,9 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Sinauverse - Interactive Learning Platform",
   description: "Create and play interactive quizzes with friends and colleagues",
+  icons: {
+    icon: '/favicon.ico'
+  },
   keywords: ["quiz", "education", "learning", "interactive", "multiplayer"],
     generator: 'v0.dev'
 }

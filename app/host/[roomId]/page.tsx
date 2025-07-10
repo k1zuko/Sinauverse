@@ -523,7 +523,7 @@ export default function HostPage({ params }: { params: Promise<{ roomId: string 
           </div>
 
           {/* Participants List / Final Results */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-5">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -542,23 +542,7 @@ export default function HostPage({ params }: { params: Promise<{ roomId: string 
               </CardHeader>
               <CardContent>
                 {participants.length === 0 ? (
-                  <div className="flex flex-col items-center gap-3 justify-center text-center py-8 text-gray-500">
-                    <Users className="w-12 h-12 mx-auto opacity-50" />
-                    <p>Belum ada pemain yang bergabung</p>
-                    <p className="text-sm">
-                      Bagikan kode room: <strong>{room.room_code}</strong>
-                    </p>
-                    <QRCodeSVG
-                      value={`${window.location.origin}/join?code=${room.room_code}`}
-                      size={100}
-                      bgColor="#ffffff"
-                      fgColor="#000000"
-                      level="H"
-                      className="mt-3"
-                    />
-                    <p className="text-xs text-black opacity-70">Scan untuk join game</p>
-
-                  </div>
+                  null
                 ) : (
                   <div className="space-y-3">
                     {gameState === "finished" && (
@@ -623,6 +607,27 @@ export default function HostPage({ params }: { params: Promise<{ roomId: string 
                     ))}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent>
+                <div className="flex flex-col items-center gap-3 justify-center text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto opacity-50" />
+                    <p>Belum ada pemain yang bergabung</p>
+                    <p className="text-sm">
+                      Bagikan kode room: <strong>{room.room_code}</strong>
+                    </p>
+                    <QRCodeSVG
+                      value={`${window.location.origin}/join?code=${room.room_code}`}
+                      size={100}
+                      bgColor="#ffffff"
+                      fgColor="#000000"
+                      level="H"
+                      className="mt-3"
+                    />
+                    <p className="text-xs text-black opacity-70">Scan untuk join game</p>
+
+                  </div>
               </CardContent>
             </Card>
           </div>

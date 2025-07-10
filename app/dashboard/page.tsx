@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Header } from "@/components/layout/header"
 import { LoadingSpinner } from "@/components/layout/loading-spinner"
-import { Plus, Play, Users, Trophy, Edit, Trash2, Calendar } from "lucide-react"
+import { Plus, Play, Users, Trophy, Trash2, Calendar } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import type { Database } from "@/types/database"
@@ -282,11 +282,6 @@ export default function DashboardPage() {
                           <Link href={`/play/${quiz.id}`}>
                             <Play className="w-4 h-4 mr-1" />
                             Main
-                          </Link>
-                        </Button>
-                        <Button size="sm" variant="outline" asChild>
-                          <Link href={`/edit/${quiz.id}`}>
-                            <Edit className="w-4 h-4" />
                           </Link>
                         </Button>
                         <Button
