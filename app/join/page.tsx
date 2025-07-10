@@ -20,7 +20,7 @@ import { useSearchParams } from "next/navigation"
 export default function JoinGamePage({ searchParams,
 }: {
   searchParams: { code?: string }
-})
+}) {
 const { user, profile, loading } = useAuth()
 const router = useRouter()
 const { toast } = useToast()
