@@ -6,7 +6,7 @@ import JoinGame from "./pageForJoin"
 export default function JoinGamePage() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <JoinGamePage />
+      <JoinGame />
     </Suspense>
   )
 }
