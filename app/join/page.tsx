@@ -14,16 +14,22 @@ import { Play, Users, GamepadIcon, Home } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
-// import { useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 
 
-export default function JoinGamePage({ searchParams,
-}: {
-  searchParams: { code?: string }
-}) {
-  // const searchParams = useSearchParams()
-  const [roomCode, setRoomCode] = useState(searchParams.code?.toUpperCase() || '')
+export default function JoinGamePage() {
+  const searchParams = useSearchParams()
+
+  const [roomCode, setRoomCode] = useState('')
   const [nickname, setNickname] = useState('')
+
+  useEffect(() => {
+    const code = searchParams.get('code')
+    if (code) {
+      setRoomCode(code.toUpperCase())
+    }
+  }, [searchParams])
+
 const { user, profile, loading } = useAuth()
 const router = useRouter()
 const { toast } = useToast()
