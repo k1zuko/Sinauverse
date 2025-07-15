@@ -12,6 +12,8 @@ import { Users, Play, BookOpen, Clock, Trophy } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
+import { Html5Qrcode } from "html5-qrcode"
+
 
 export default function JoinGame() {
   const { user, profile, loading } = useAuth()
@@ -24,6 +26,10 @@ export default function JoinGame() {
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState("")
   const [roomInfo, setRoomInfo] = useState<any>(null)
+
+  const [showScanner, setShowScanner] = useState(false)
+  let qrScanner: Html5Qrcode | null = null
+
 
   useEffect(() => {
     if (!loading && !user) {
@@ -43,6 +49,63 @@ export default function JoinGame() {
       setNickname(user.email.split("@")[0])
     }
   }, [user, loading, searchParams])
+
+  useEffect(() => {
+    if (!showScanner) return
+
+    const startScanner = async () => {
+      const config = { fps: 10, qrbox: 250 }
+      qrScanner = new Html5Qrcode("qr-reader")
+      try {
+        await qrScanner.start(
+          { facingMode: "environment" },
+          config,
+          (decodedText) => {
+            const cleanText = decodedText.trim()
+            console.log("📸 QR scanned:", cleanText)
+
+            let code: string | null = null
+
+            try {
+              const url = new URL(cleanText)
+              code = url.searchParams.get("code")
+            } catch {
+              // Bukan URL → langsung pakai sebagai kode
+              if (/^[A-Z0-9]{6}$/.test(cleanText)) {
+                code = cleanText
+              }
+            }
+
+            if (code && code.length === 6) {
+              const upperCode = code.toUpperCase()
+              setRoomCode(upperCode)
+              checkRoomCode(upperCode)
+              setShowScanner(false)
+              // qrScanner?.stop()
+              document.getElementById("roomCode")?.focus()
+              // console.log("✅ Room code diisi:", upperCode)
+            } else {
+              console.warn("❌ QR tidak valid atau tidak mengandung kode room.")
+            }
+          }
+
+          ,
+          (errorMessage) => {
+            // Optional error handling
+          }
+        )
+      } catch (err) {
+        console.error("QR Scanner failed:", err)
+      }
+    }
+
+    startScanner()
+
+    return () => {
+      qrScanner?.stop()
+    }
+  }, [showScanner])
+
 
   const checkRoomCode = async (code: string) => {
     if (!code || code.length !== 6) return
@@ -240,12 +303,37 @@ export default function JoinGame() {
                 <Input
                   id="roomCode"
                   type="text"
-                  placeholder="Masukkan 6 digit kode"
+                  placeholder="123456"
                   value={roomCode}
                   onChange={(e) => handleRoomCodeChange(e.target.value)}
                   maxLength={6}
                   className="text-center text-3xl font-bold tracking-widest uppercase h-16 border-2 border-gray-300 focus:border-blue-500 bg-gray-50"
                 />
+              </div>
+
+              {/* QR SCANNER */}
+              <div className="pt-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowScanner(true)}
+                  className="w-full"
+                >
+                  Scan QR Code
+                </Button>
+                {showScanner && (
+                  <div className="mt-4 border border-gray-300 rounded-lg overflow-hidden">
+                    <div id="qr-reader" className="w-full" />
+                    <div className="text-center pt-2">
+                      <Button
+                        variant="ghost"
+                        onClick={() => setShowScanner(false)}
+                        className="text-red-600"
+                      >
+                        ✕ Tutup Scanner
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Room Info */}

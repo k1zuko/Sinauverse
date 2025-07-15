@@ -71,7 +71,7 @@ export function Header() {
         </Link>
 
         {/* Navigation */}
-        <nav className="hidden md:flex items-center gap-6">
+        {/* <nav className="hidden md:flex items-center gap-6">
           <Link
             href="/dashboard"
             className="text-gray-600 hover:text-gray-900 transition-colors font-medium flex items-center gap-2"
@@ -99,10 +99,10 @@ export function Header() {
               Buat Kuis
             </Link>
           </Button>
-        </nav>
+        </nav> */}
 
         {/* User Menu */}
-        {user && (
+        {user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-10 w-10 rounded-full">
@@ -154,6 +154,18 @@ export function Header() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+        ) : (
+          <nav className="hidden md:flex items-center gap-4">
+            <Link
+              href="/auth/login"
+              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              Masuk
+            </Link>
+            <Button asChild className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium shadow-md px-5">
+              <Link href="/auth/register">Daftar</Link>
+            </Button>
+          </nav>
         )}
       </div>
     </header>

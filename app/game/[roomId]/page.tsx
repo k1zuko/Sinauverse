@@ -76,7 +76,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     }
   }, [user, loading, resolvedParams.roomId])
 
-  // Game Timer effect
+  // Game Timer effect - FIXED
   useEffect(() => {
     // Clear existing game timer
     if (gameTimerRef.current) {
@@ -88,14 +88,21 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     if (gameState === "playing" && !isFinished && gameStartTime && !showCountdown) {
       console.log("Starting game timer with totalTime:", totalTime, "and startTime:", gameStartTime)
 
+      // Calculate initial remaining time more accurately
+      const now = Date.now()
+      const elapsed = Math.floor((now - gameStartTime.getTime()) / 1000)
+      const initialRemaining = Math.max(totalTime - elapsed, 0)
+
+      setTimeLeft(initialRemaining)
+
       gameTimerRef.current = setInterval(() => {
-        const now = Date.now()
-        const elapsed = Math.floor((now - gameStartTime.getTime()) / 1000)
-        const actualRemaining = Math.max(totalTime - elapsed, 0)
+        const currentTime = Date.now()
+        const currentElapsed = Math.floor((currentTime - gameStartTime.getTime()) / 1000)
+        const actualRemaining = Math.max(totalTime - currentElapsed, 0)
 
-        console.log("Game Timer tick - Elapsed:", elapsed, "Actual Remaining:", actualRemaining)
+        console.log("Game Timer tick - Elapsed:", currentElapsed, "Actual Remaining:", actualRemaining)
 
-        setTimeLeft(actualRemaining) // Update timeLeft based on actual elapsed time
+        setTimeLeft(actualRemaining)
 
         if (actualRemaining <= 0) {
           console.log("Game Time's up!")
@@ -116,7 +123,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     }
   }, [gameState, isFinished, gameStartTime, totalTime, showCountdown])
 
-  // Countdown Timer effect
+  // Countdown Timer effect - FIXED
   useEffect(() => {
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current)
@@ -125,16 +132,15 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
 
     if (showCountdown && countdownValue > 0) {
       countdownTimerRef.current = setInterval(() => {
-        setCountdownValue((prev) => prev - 1)
+        setCountdownValue((prev) => {
+          if (prev <= 1) {
+            // Countdown finished
+            setShowCountdown(false)
+            return 0
+          }
+          return prev - 1
+        })
       }, 1000)
-    } else if (countdownValue === 0 && showCountdown) {
-      // Countdown finished, hide countdown and let game timer start
-      setShowCountdown(false)
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current)
-        countdownTimerRef.current = null
-      }
-      // The main game timer useEffect will now trigger because showCountdown is false
     }
 
     return () => {
@@ -235,22 +241,20 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
         const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
         const remaining = Math.max(quizTotalTime - elapsed, 0)
 
-        setTimeLeft(remaining)
-
         if (remaining <= 0) {
           handleTimeUp()
         } else {
-          // ADD THIS
+          // Show countdown if game just started (within 10 seconds)
           if (elapsed < 10) {
             setShowCountdown(true)
             setCountdownValue(10 - elapsed)
+            setTimeLeft(remaining) // Set the actual remaining time
           } else {
             setShowCountdown(false)
+            setTimeLeft(remaining)
           }
         }
       }
-
-
 
       // Fetch participants
       await fetchParticipants()
@@ -340,7 +344,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     }
 
     const channel = supabase
-      .channel(`game-${resolvedParams.roomId}-${Date.now()}`)
+      .channel(`game-${resolvedParams.roomId}-${user?.id}-${Date.now()}`)
       .on(
         "postgres_changes",
         {
@@ -361,22 +365,24 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
             if (newData.status === "playing" && newData.started_at) {
               const startTime = new Date(newData.started_at)
               setGameStartTime(startTime)
+              window.location.reload()
 
               // Calculate remaining time based on actual elapsed time
               const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
-              const remaining = Math.max(totalTime - elapsed, 0) // Use totalTime from state
-
-              setTimeLeft(remaining)
+              const remaining = Math.max(totalTime - elapsed, 0)
 
               if (remaining > 0) {
-                setShowCountdown(true) // Start 10-second countdown
+                // Always show 10 second countdown for multiplayer
+                setShowCountdown(true)
                 setCountdownValue(10)
-                // toast({
-                //   title: "Game Dimulai!",
-                //   description: "Bersiaplah! Quiz akan segera dimulai...",
-                // })
+                setTimeLeft(remaining) // Set actual time, not affected by countdown
+
+                toast({
+                  title: "Game Dimulai!",
+                  description: "Bersiaplah! Quiz akan segera dimulai...",
+                })
               } else {
-                handleTimeUp() // If no time left, immediately handle time up
+                handleTimeUp()
               }
             }
 
@@ -409,10 +415,13 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       )
       .subscribe((status) => {
         console.log("Subscription status:", status)
+        if (status === "SUBSCRIBED") {
+          console.log("Successfully subscribed to real-time updates")
+        }
       })
 
     subscriptionRef.current = channel
-  }, [resolvedParams.roomId, gameState, totalTime])
+  }, [resolvedParams.roomId, gameState, totalTime, user?.id])
 
   // Re-setup subscriptions when questions are loaded
   useEffect(() => {
@@ -597,7 +606,6 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
         console.log("Quiz finished successfully")
       }
 
-
       setIsFinished(true)
 
       // Clear timers
@@ -633,7 +641,6 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
           })
           .eq("id", resolvedParams.roomId)
           .then((res) => console.log("✅ Room marked as finished:", res))
-
       }
     } catch (error) {
       console.error("Error finishing quiz:", error)
@@ -745,10 +752,11 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
             {remaining.map((participant, index) => (
               <div
                 key={participant.id}
-                className={`flex items-center justify-between p-2 rounded text-xs ${participant.id === myParticipant?.id
-                  ? "bg-blue-50 border border-blue-200"
-                  : "bg-gray-50 border border-gray-200"
-                  }`}
+                className={`flex items-center justify-between p-2 rounded text-xs ${
+                  participant.id === myParticipant?.id
+                    ? "bg-blue-50 border border-blue-200"
+                    : "bg-gray-50 border border-gray-200"
+                }`}
               >
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 bg-gray-300 rounded-full flex items-center justify-center text-white font-bold text-xs">
@@ -771,6 +779,19 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
   // Check if all questions are answered
   const allQuestionsAnswered = questions.every((_, index) => answers[index] !== undefined)
   const answeredCount = Object.keys(answers).length
+
+  // Auto-finish when all questions are answered
+  useEffect(() => {
+    if (gameState === "playing" && !isFinished && questions.length > 0) {
+      const allAnswered = questions.every((_, index) => answers[index] !== undefined)
+      if (allAnswered && Object.keys(answers).length === questions.length) {
+        console.log("All questions answered, auto-finishing...")
+        setTimeout(() => {
+          finishQuiz()
+        }, 1000) // Small delay to ensure last answer is saved
+      }
+    }
+  }, [answers, questions, gameState, isFinished])
 
   if (loading) {
     return (
@@ -989,7 +1010,11 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
         <Card className="border-0 shadow-lg rounded-xl">
           <CardContent className="p-8">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-8 leading-tight text-center animate-pop-in">
-              {question.question_text}
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: formatRichContent(question.question_text),
+                }}
+              />
             </h2>
 
             {/* Answer Options */}
@@ -1025,7 +1050,11 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
                       className={buttonClass}
                     >
                       <span className="text-3xl mr-3">{answerShapes[index]}</span>
-                      {option.option_text}
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: formatRichContent(option.option_text),
+                        }}
+                      />
                       {isSelected && <CheckCircle className="w-6 h-6 ml-3" />}
                     </Button>
                   )
@@ -1081,12 +1110,13 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
                     key={index}
                     onClick={() => !isFinished && !showCountdown && goToQuestion(index)}
                     disabled={isFinished || showCountdown}
-                    className={`w-10 h-10 rounded-full text-sm font-bold transition-all shadow-sm ${index === currentQuestion
-                      ? "bg-blue-500 text-white scale-110 shadow-lg"
-                      : answers[index] !== undefined
-                        ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                        : "bg-gray-200 text-gray-600 hover:bg-gray-300"
-                      }`}
+                    className={`w-10 h-10 rounded-full text-sm font-bold transition-all shadow-sm ${
+                      index === currentQuestion
+                        ? "bg-blue-500 text-white scale-110 shadow-lg"
+                        : answers[index] !== undefined
+                          ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                          : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                    }`}
                   >
                     {index + 1}
                   </button>
@@ -1108,4 +1138,23 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       </div>
     </div>
   )
+}
+
+const formatRichContent = (text: string) => {
+  if (!text) return ""
+
+  return (
+    text
+      // Bold text
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      // Italic text
+      .replace(/\*(.*?)\*/g, "<em>$1</em>")
+      // Code text
+      .replace(/`(.*?)`/g, '<code class="bg-gray-200 px-1 rounded text-sm">$1</code>')
+      // Strikethrough
+      .replace(/~~(.*?)~~/g, "<del>$1</del>")
+      // Line breaks
+      .replace(/\n/g, "<br>")
+  )
+  // Preserve HTML entities and emojis as-is
 }
