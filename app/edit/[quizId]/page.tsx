@@ -1,7 +1,6 @@
-// pages/page.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import { useAuth } from "@/lib/auth"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -12,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Trash2, Save, Play, ArrowLeft, Clock, Eye, EyeOff, FileText, Bot } from "lucide-react" // Added Bot icon
+import { Plus, Trash2, Save, ArrowLeft, Clock, Eye, EyeOff, FileText } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
@@ -22,6 +21,7 @@ interface Question {
   question_text: string
   points: number
   options: {
+    id?: string
     option_text: string
     is_correct: boolean
   }[]
@@ -40,44 +40,118 @@ const categories = [
   { value: "business", label: "Bisnis" },
 ]
 
-export default function CreateQuizPage() {
+export default function EditQuizPage({ params }: { params: Promise<{ quizId: string }> }) {
+  const resolvedParams = use(params)
   const { user, profile, loading } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
-  const [generating, setGenerating] = useState(false) // New state for AI generation
+  const [dataLoading, setDataLoading] = useState(true)
   const [error, setError] = useState("")
 
   const [quizData, setQuizData] = useState({
     title: "",
     description: "",
     category: "general",
-    total_time: 300, // 5 minutes default
+    total_time: 300,
     is_public: true,
     is_draft: false,
   })
 
-  const [questions, setQuestions] = useState<Question[]>([
-    {
-      question_text: "",
-      points: 100,
-      options: [
-        { option_text: "", is_correct: false },
-        { option_text: "", is_correct: false },
-        { option_text: "", is_correct: false },
-        { option_text: "", is_correct: false },
-      ],
-    },
-  ])
-
-  const [aiPrompt, setAiPrompt] = useState(""); // State for user input prompt for AI
-  const [numAiQuestions, setNumAiQuestions] = useState(5); // State for number of AI questions
+  const [questions, setQuestions] = useState<Question[]>([])
 
   useEffect(() => {
     if (!loading && !user) {
       router.push("/auth/login")
+      return
     }
-  }, [user, loading, router])
+
+    if (user) {
+      fetchQuizData()
+    }
+  }, [user, loading, resolvedParams.quizId])
+
+  const fetchQuizData = async () => {
+    try {
+      const { data: quiz, error: quizError } = await supabase
+        .from("quizzes")
+        .select(`
+          *,
+          questions (
+            id,
+            question_text,
+            points,
+            order_index,
+            answer_options (
+              id,
+              option_text,
+              is_correct,
+              option_index
+            )
+          )
+        `)
+        .eq("id", resolvedParams.quizId)
+        .eq("creator_id", user!.id)
+        .single()
+
+      if (quizError || !quiz) {
+        toast({
+          title: "Error",
+          description: "Kuis tidak ditemukan atau Anda tidak memiliki akses",
+          variant: "destructive",
+        })
+        router.push("/my-quizzes")
+        return
+      }
+
+      // Set quiz data
+      setQuizData({
+        title: quiz.title,
+        description: quiz.description || "",
+        category: quiz.category || "general",
+        total_time: quiz.total_time || 300,
+        is_public: quiz.is_public,
+        is_draft: quiz.is_draft,
+      })
+
+      // Set questions data
+      const sortedQuestions = quiz.questions.sort((a: any, b: any) => a.order_index - b.order_index)
+      const formattedQuestions = sortedQuestions.map((q: any) => ({
+        id: q.id,
+        question_text: q.question_text,
+        points: q.points,
+        options: q.answer_options
+          .sort((a: any, b: any) => a.option_index - b.option_index)
+          .map((opt: any) => ({
+            id: opt.id,
+            option_text: opt.option_text,
+            is_correct: opt.is_correct,
+          })),
+      }))
+
+      setQuestions(
+        formattedQuestions.length > 0
+          ? formattedQuestions
+          : [
+              {
+                question_text: "",
+                points: 100,
+                options: [
+                  { option_text: "", is_correct: false },
+                  { option_text: "", is_correct: false },
+                  { option_text: "", is_correct: false },
+                  { option_text: "", is_correct: false },
+                ],
+              },
+            ],
+      )
+    } catch (error) {
+      console.error("Error fetching quiz:", error)
+      setError("Gagal memuat data kuis")
+    } finally {
+      setDataLoading(false)
+    }
+  }
 
   const addQuestion = () => {
     setQuestions([
@@ -161,33 +235,25 @@ export default function CreateQuizPage() {
   }
 
   const saveQuiz = async (isDraft = false) => {
-    if (!validateQuiz() && !isDraft) {
-      toast({
-        title: "Validasi Gagal",
-        description: error,
-        variant: "destructive",
-      });
-      return
-    }
+    if (!validateQuiz() && !isDraft) return
 
     setSaving(true)
     setError("")
 
     try {
-      // Create quiz
-      const { data: quiz, error: quizError } = await supabase
+      // Update quiz
+      const { error: quizError } = await supabase
         .from("quizzes")
-        .insert({
+        .update({
           title: quizData.title,
           description: quizData.description,
           category: quizData.category,
           total_time: quizData.total_time,
           is_public: quizData.is_public,
           is_draft: isDraft,
-          creator_id: user!.id,
+          updated_at: new Date().toISOString(),
         })
-        .select()
-        .single()
+        .eq("id", resolvedParams.quizId)
 
       if (quizError) {
         setError("Gagal menyimpan kuis")
@@ -195,30 +261,19 @@ export default function CreateQuizPage() {
         return
       }
 
-      // Create questions and options
+      // Delete existing questions and options
+      await supabase.from("questions").delete().eq("quiz_id", resolvedParams.quizId)
+
+      // Create new questions and options
       for (let i = 0; i < questions.length; i++) {
         const question = questions[i]
 
-        // Skip saving empty questions if it's a draft
         if (!question.question_text.trim() && isDraft) continue
-
-        // Ensure there's at least one non-empty option if not a draft, or if it is a draft and the question text is present
-        if (!isDraft || (isDraft && question.question_text.trim())) {
-          const hasNonEmptyOption = question.options.some(option => option.option_text.trim() !== '');
-          if (!hasNonEmptyOption && !isDraft) {
-            setError(`Pertanyaan ${i + 1} harus memiliki setidaknya satu pilihan jawaban yang diisi.`);
-            setSaving(false);
-            return;
-          }
-          // If saving as draft and question text is present, but no options, skip
-          if (isDraft && question.question_text.trim() && !hasNonEmptyOption) continue;
-        }
-
 
         const { data: questionData, error: questionError } = await supabase
           .from("questions")
           .insert({
-            quiz_id: quiz.id,
+            quiz_id: resolvedParams.quizId,
             question_text: question.question_text,
             points: question.points,
             order_index: i + 1,
@@ -227,7 +282,7 @@ export default function CreateQuizPage() {
           .single()
 
         if (questionError) {
-          setError(`Gagal menyimpan pertanyaan ${i + 1}: ${questionError.message}`)
+          setError(`Gagal menyimpan pertanyaan ${i + 1}`)
           setSaving(false)
           return
         }
@@ -243,62 +298,21 @@ export default function CreateQuizPage() {
         const { error: optionsError } = await supabase.from("answer_options").insert(optionsData)
 
         if (optionsError) {
-          setError(`Gagal menyimpan pilihan jawaban untuk pertanyaan ${i + 1}: ${optionsError.message}`)
+          setError(`Gagal menyimpan pilihan jawaban untuk pertanyaan ${i + 1}`)
           setSaving(false)
           return
         }
       }
 
       toast({
-        title: isDraft ? "Draft berhasil disimpan!" : "Kuis berhasil dipublikasi!",
-        description: `Kuis "${quizData.title}" telah ${isDraft ? "disimpan sebagai draft" : "dipublikasi"} dengan ${questions.length} pertanyaan`,
+        title: isDraft ? "Draft berhasil disimpan!" : "Kuis berhasil diperbarui!",
+        description: `Kuis "${quizData.title}" telah ${isDraft ? "disimpan sebagai draft" : "diperbarui"} dengan ${questions.length} pertanyaan`,
       })
 
-      router.push("/dashboard")
-    } catch (err: any) {
-      console.error("Save Quiz Error:", err);
-      setError(`Terjadi kesalahan yang tidak terduga: ${err.message || ""}`)
+      router.push("/my-quizzes")
+    } catch (err) {
+      setError("Terjadi kesalahan yang tidak terduga")
       setSaving(false)
-    }
-  }
-
-  const generateQuestionsWithAI = async () => {
-    setGenerating(true)
-
-    const res = await fetch("/api/generate-quiz", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        topic: aiPrompt || quizData.title,
-        count: numAiQuestions,
-        existingCount: questions.length, 
-      }),
-    })
-
-    const data = await res.json()
-    setGenerating(false)
-
-    if (data.questions) {
-      const cleaned = data.questions.map((q: any) => ({
-        question_text: q.question_text || "",
-        points: q.points || 100,
-        options: (q.options || []).map((opt: any) => ({
-          option_text: opt.option_text || "",
-          is_correct: opt.is_correct || false,
-        })),
-      }))
-
-      setQuestions((prev) => [...prev, ...cleaned])
-      toast({
-        title: "Berhasil",
-        description: `Berhasil generate ${cleaned.length} soal dari AI`,
-      })
-    } else {
-      toast({
-        title: "Gagal",
-        description: data.message || "Tidak dapat memproses AI",
-        variant: "destructive",
-      })
     }
   }
 
@@ -308,10 +322,10 @@ export default function CreateQuizPage() {
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
   }
 
-  if (loading) {
+  if (loading || dataLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-2xl text-gray-700">Loading...</div>
+        <div className="text-2xl">Loading...</div>
       </div>
     )
   }
@@ -328,32 +342,32 @@ export default function CreateQuizPage() {
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center gap-4">
               <Link
-                href="/dashboard"
+                href="/my-quizzes"
                 className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
                 <span className="font-medium">Kembali</span>
               </Link>
-              <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
-                <Play className="w-5 h-5 text-white fill-current" />
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <FileText className="w-5 h-5 text-white" />
               </div>
-              <span className="font-bold text-xl text-gray-900">Buat Kuis Baru</span>
+              <span className="font-bold text-xl text-gray-900">Edit Kuis</span>
             </div>
 
             <div className="flex items-center gap-3">
-              {/* <span className="text-gray-700">Hi, {profile?.username}</span> */}
+              <span className="text-gray-700">Hi, {profile?.username}</span>
               <Button
                 onClick={() => saveQuiz(true)}
-                disabled={saving || generating}
+                disabled={saving}
                 variant="outline"
                 className="border-gray-300 text-gray-700 hover:bg-gray-50"
               >
                 <FileText className="w-4 h-4 mr-2" />
                 {saving ? "Menyimpan..." : "Simpan Draft"}
               </Button>
-              <Button onClick={() => saveQuiz(false)} disabled={saving || generating} className="bg-purple-600 hover:bg-purple-700">
+              <Button onClick={() => saveQuiz(false)} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
                 <Save className="w-4 h-4 mr-2" />
-                {saving ? "Mempublikasi..." : "Publikasi Kuis"}
+                {saving ? "Menyimpan..." : "Simpan Perubahan"}
               </Button>
             </div>
           </div>
@@ -369,9 +383,9 @@ export default function CreateQuizPage() {
 
         {/* Quiz Info */}
         <Card className="mb-8 shadow-lg border-0">
-          <CardHeader className="bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-t-lg">
+          <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-t-lg">
             <CardTitle className="text-2xl">Informasi Kuis</CardTitle>
-            <CardDescription className="text-purple-100">Atur detail dasar kuis Anda</CardDescription>
+            <CardDescription className="text-blue-100">Edit detail dasar kuis Anda</CardDescription>
           </CardHeader>
           <CardContent className="p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -384,7 +398,7 @@ export default function CreateQuizPage() {
                   placeholder="Masukkan judul kuis yang menarik"
                   value={quizData.title}
                   onChange={(e) => setQuizData({ ...quizData, title: e.target.value })}
-                  className="border-gray-300 focus:border-purple-500 focus:ring-purple-500"
+                  className="border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                   required
                 />
               </div>
@@ -397,7 +411,7 @@ export default function CreateQuizPage() {
                   value={quizData.category}
                   onValueChange={(value) => setQuizData({ ...quizData, category: value })}
                 >
-                  <SelectTrigger className="border-gray-300 focus:border-purple-500">
+                  <SelectTrigger className="border-gray-300 focus:border-blue-500">
                     <SelectValue placeholder="Pilih kategori" />
                   </SelectTrigger>
                   <SelectContent>
@@ -421,7 +435,7 @@ export default function CreateQuizPage() {
                 value={quizData.description}
                 onChange={(e) => setQuizData({ ...quizData, description: e.target.value })}
                 rows={3}
-                className="border-gray-300 focus:border-purple-500 focus:ring-purple-500"
+                className="border-gray-300 focus:border-blue-500 focus:ring-blue-500"
               />
             </div>
 
@@ -439,7 +453,7 @@ export default function CreateQuizPage() {
                     step="60"
                     value={quizData.total_time}
                     onChange={(e) => setQuizData({ ...quizData, total_time: Number.parseInt(e.target.value) })}
-                    className="border-gray-300 focus:border-purple-500 focus:ring-purple-500"
+                    className="border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                   />
                   <div className="flex items-center gap-2 text-sm text-gray-600">
                     <Clock className="w-4 h-4" />
@@ -477,60 +491,11 @@ export default function CreateQuizPage() {
           </CardContent>
         </Card>
 
-        {/* AI Generation Section */}
-        <Card className="mb-8 shadow-lg border-0">
-          <CardHeader className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-t-lg">
-            <CardTitle className="text-2xl">Buat Pertanyaan dengan AI</CardTitle>
-            <CardDescription className="text-green-100">Gunakan AI untuk membantu Anda membuat pertanyaan</CardDescription>
-          </CardHeader>
-          <CardContent className="p-6 space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="ai-prompt" className="text-sm font-semibold text-gray-700">
-                Topik atau Instruksi untuk AI
-              </Label>
-              <Textarea
-                id="ai-prompt"
-                placeholder="Contoh: 5 soal pilihan ganda tentang sejarah Proklamasi Kemerdekaan Indonesia. Pastikan ada 4 pilihan dan 1 jawaban benar."
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                rows={3}
-                className="border-gray-300 focus:border-green-500 focus:ring-green-500"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="num-ai-questions" className="text-sm font-semibold text-gray-700">
-                Jumlah Pertanyaan AI
-              </Label>
-              <Input
-                id="num-ai-questions"
-                type="number"
-                min="1"
-                max="20" // Set a reasonable max to prevent excessive generation
-                value={numAiQuestions}
-                onChange={(e) => setNumAiQuestions(Number.parseInt(e.target.value))}
-                className="w-32 border-gray-300 focus:border-green-500 focus:ring-green-500"
-              />
-            </div>
-            <Button
-              onClick={generateQuestionsWithAI}
-              disabled={generating || saving}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <Bot className="w-4 h-4 mr-2" />
-              {generating ? "Generate..." : "Generate dengan AI"}
-            </Button>
-            {/* <p className="text-sm text-gray-500 mt-2">
-              AI akan menambahkan pertanyaan ke daftar pertanyaan yang ada. Harap periksa dan edit hasilnya.
-              Untuk hasil terbaik, instruksikan AI untuk menyediakan format JSON jika memungkinkan.
-            </p> */}
-          </CardContent>
-        </Card>
-
         {/* Questions */}
         <div className="space-y-6">
           {questions.map((question, questionIndex) => (
             <Card key={questionIndex} className="shadow-lg border-0">
-              <CardHeader className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-t-lg">
+              <CardHeader className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-t-lg">
                 <div className="flex justify-between items-center">
                   <CardTitle className="text-lg">Pertanyaan {questionIndex + 1}</CardTitle>
                   {questions.length > 1 && (
@@ -553,7 +518,7 @@ export default function CreateQuizPage() {
                     value={question.question_text}
                     onChange={(e) => updateQuestion(questionIndex, "question_text", e.target.value)}
                     rows={2}
-                    className="border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                    className="border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
                   />
                 </div>
 
@@ -566,7 +531,7 @@ export default function CreateQuizPage() {
                     step="10"
                     value={question.points}
                     onChange={(e) => updateQuestion(questionIndex, "points", Number.parseInt(e.target.value))}
-                    className="w-32 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                    className="w-32 border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
                   />
                 </div>
 
@@ -576,8 +541,9 @@ export default function CreateQuizPage() {
                     {question.options.map((option, optionIndex) => (
                       <div
                         key={optionIndex}
-                        className={`flex items-center gap-3 p-4 border-2 rounded-lg transition-colors ${option.is_correct ? "border-green-500 bg-green-50" : "border-gray-200 bg-white"
-                          }`}
+                        className={`flex items-center gap-3 p-4 border-2 rounded-lg transition-colors ${
+                          option.is_correct ? "border-green-500 bg-green-50" : "border-gray-200 bg-white"
+                        }`}
                       >
                         <input
                           type="radio"
@@ -590,8 +556,9 @@ export default function CreateQuizPage() {
                           placeholder={`Pilihan ${String.fromCharCode(65 + optionIndex)}`}
                           value={option.option_text}
                           onChange={(e) => updateOption(questionIndex, optionIndex, "option_text", e.target.value)}
-                          className={`flex-1 border-0 bg-transparent focus:ring-0 ${option.is_correct ? "font-semibold text-green-800" : ""
-                            }`}
+                          className={`flex-1 border-0 bg-transparent focus:ring-0 ${
+                            option.is_correct ? "font-semibold text-green-800" : ""
+                          }`}
                         />
                       </div>
                     ))}
@@ -609,10 +576,10 @@ export default function CreateQuizPage() {
             onClick={addQuestion}
             variant="outline"
             size="lg"
-            className="border-dashed border-2 border-gray-300 text-gray-600 hover:border-purple-500 hover:text-purple-600 hover:bg-purple-50 px-8 py-4 bg-transparent"
+            className="border-dashed border-2 border-gray-300 text-gray-600 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 px-8 py-4 bg-transparent"
           >
             <Plus className="w-5 h-5 mr-2" />
-            Tambah Pertanyaan Manual
+            Tambah Pertanyaan
           </Button>
         </div>
 
@@ -620,7 +587,7 @@ export default function CreateQuizPage() {
         <div className="flex justify-center gap-4 mt-8 pb-8">
           <Button
             onClick={() => saveQuiz(true)}
-            disabled={saving || generating}
+            disabled={saving}
             variant="outline"
             size="lg"
             className="border-gray-300 text-gray-700 hover:bg-gray-50 px-8 py-3"
@@ -630,12 +597,12 @@ export default function CreateQuizPage() {
           </Button>
           <Button
             onClick={() => saveQuiz(false)}
-            disabled={saving || generating}
+            disabled={saving}
             size="lg"
-            className="bg-purple-600 hover:bg-purple-700 px-8 py-3"
+            className="bg-blue-600 hover:bg-blue-700 px-8 py-3"
           >
             <Save className="w-5 h-5 mr-2" />
-            {saving ? "Mempublikasi..." : "Publikasi Kuis"}
+            {saving ? "Menyimpan..." : "Simpan Perubahan"}
           </Button>
         </div>
       </div>

@@ -108,6 +108,6 @@ export {
   Toast,
   ToastTitle,
   ToastDescription,
-  ToastAction,
   ToastClose,
+  ToastAction,
 }

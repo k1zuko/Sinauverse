@@ -6,18 +6,25 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Trophy, Clock, Users, Home, ChevronLeft, ChevronRight, CheckCircle, Badge } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import {
+  Trophy,
+  Users,
+  Home,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle,
+  ArrowLeft,
+  Play,
+  Flag,
+  Timer,
+  Medal,
+  Crown,
+  FileText,
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
-
-const answerColors = [
-  "bg-red-500 hover:bg-red-600",
-  "bg-blue-500 hover:bg-blue-600",
-  "bg-yellow-500 hover:bg-yellow-600",
-  "bg-green-500 hover:bg-green-600",
-]
-
-const answerShapes = ["△", "◇", "○", "□"]
+import Link from "next/link"
 
 export default function GamePage({ params }: { params: Promise<{ roomId: string }> }) {
   const resolvedParams = use(params)
@@ -31,46 +38,26 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [participants, setParticipants] = useState<any[]>([])
   const [myParticipant, setMyParticipant] = useState<any>(null)
-  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
-  const [showResult, setShowResult] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(20)
   const [gameState, setGameState] = useState<"waiting" | "playing" | "finished">("waiting")
-  const [hasAnswered, setHasAnswered] = useState(false)
-  const [gameMode, setGameMode] = useState<"solo" | "multi" | "practice">("multi")
+  const [gameMode, setGameMode] = useState<"solo" | "multiplayer">("multiplayer")
 
-  // Practice mode specific state
-  const [practiceAnswers, setPracticeAnswers] = useState<{ [key: number]: number }>({})
-  const [practiceTimeLeft, setPracticeTimeLeft] = useState(0)
+  // Timer and answers state
+  const [answers, setAnswers] = useState<{ [key: number]: number }>({})
+  const [timeLeft, setTimeLeft] = useState(0)
+  const [totalTime, setTotalTime] = useState(0)
   const [isFinished, setIsFinished] = useState(false)
+  const [gameStartTime, setGameStartTime] = useState<Date | null>(null)
 
-  // Refs for preventing stale closures and managing timers
-  const gameStateRef = useRef(gameState)
-  const currentQuestionRef = useRef(currentQuestion)
-  const selectedAnswerRef = useRef(selectedAnswer)
-  const showResultRef = useRef(showResult)
-  const hasAnsweredRef = useRef(hasAnswered)
+  // Countdown state
+  const [showCountdown, setShowCountdown] = useState(false)
+  const [countdownValue, setCountdownValue] = useState(10) // 10 seconds countdown
+  const countdownTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Refs for managing subscriptions and preventing memory leaks
   const subscriptionRef = useRef<any>(null)
+  const gameTimerRef = useRef<NodeJS.Timeout | null>(null) // Renamed from timerRef to gameTimerRef
   const isInitialized = useRef(false)
-  const lastQuestionUpdate = useRef(0)
-  const autoAdvanceTimer = useRef<NodeJS.Timeout | null>(null)
-  const isResetting = useRef(false)
-
-  // Update refs when state changes
-  useEffect(() => {
-    gameStateRef.current = gameState
-  }, [gameState])
-  useEffect(() => {
-    currentQuestionRef.current = currentQuestion
-  }, [currentQuestion])
-  useEffect(() => {
-    selectedAnswerRef.current = selectedAnswer
-  }, [selectedAnswer])
-  useEffect(() => {
-    showResultRef.current = showResult
-  }, [showResult])
-  useEffect(() => {
-    hasAnsweredRef.current = hasAnswered
-  }, [hasAnswered])
+  const answersLoadedRef = useRef(false)
 
   // Initialize game data
   useEffect(() => {
@@ -89,62 +76,85 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     }
   }, [user, loading, resolvedParams.roomId])
 
+  // Game Timer effect
   useEffect(() => {
-    if (questions.length > 0 && gameMode !== "practice") {
-      forceResetQuestionState(currentQuestion, questions)
+    // Clear existing game timer
+    if (gameTimerRef.current) {
+      clearInterval(gameTimerRef.current)
+      gameTimerRef.current = null
     }
-  }, [currentQuestion, gameMode])
 
-  // Practice mode timer
-  useEffect(() => {
-    let timer: NodeJS.Timeout
+    // Start game timer only when game is playing, not finished, has a start time, and countdown is not active
+    if (gameState === "playing" && !isFinished && gameStartTime && !showCountdown) {
+      console.log("Starting game timer with totalTime:", totalTime, "and startTime:", gameStartTime)
 
-    if (gameMode === "practice" && gameState === "playing" && practiceTimeLeft > 0 && !isFinished) {
-      timer = setTimeout(() => {
-        setPracticeTimeLeft((prev) => {
-          const newTime = prev - 1
-          if (newTime === 0) {
-            handlePracticeTimeUp()
+      gameTimerRef.current = setInterval(() => {
+        const now = Date.now()
+        const elapsed = Math.floor((now - gameStartTime.getTime()) / 1000)
+        const actualRemaining = Math.max(totalTime - elapsed, 0)
+
+        console.log("Game Timer tick - Elapsed:", elapsed, "Actual Remaining:", actualRemaining)
+
+        setTimeLeft(actualRemaining) // Update timeLeft based on actual elapsed time
+
+        if (actualRemaining <= 0) {
+          console.log("Game Time's up!")
+          handleTimeUp()
+          if (gameTimerRef.current) {
+            clearInterval(gameTimerRef.current)
+            gameTimerRef.current = null
           }
-          return newTime
-        })
+        }
       }, 1000)
     }
 
     return () => {
-      if (timer) clearTimeout(timer)
+      if (gameTimerRef.current) {
+        clearInterval(gameTimerRef.current)
+        gameTimerRef.current = null
+      }
     }
-  }, [practiceTimeLeft, gameState, gameMode, isFinished])
+  }, [gameState, isFinished, gameStartTime, totalTime, showCountdown])
 
-  // Regular game timer (non-practice)
+  // Countdown Timer effect
   useEffect(() => {
-    let timer: NodeJS.Timeout
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = null
+    }
 
-    if (gameMode !== "practice" && gameState === "playing" && timeLeft > 0 && !showResult && !isResetting.current) {
-      timer = setTimeout(() => {
-        setTimeLeft((prev) => {
-          const newTime = prev - 1
-          if (newTime === 0 && !showResultRef.current && !hasAnsweredRef.current && !isResetting.current) {
-            handleTimeUp()
-          }
-          return newTime
-        })
+    if (showCountdown && countdownValue > 0) {
+      countdownTimerRef.current = setInterval(() => {
+        setCountdownValue((prev) => prev - 1)
       }, 1000)
+    } else if (countdownValue === 0 && showCountdown) {
+      // Countdown finished, hide countdown and let game timer start
+      setShowCountdown(false)
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current)
+        countdownTimerRef.current = null
+      }
+      // The main game timer useEffect will now trigger because showCountdown is false
     }
 
     return () => {
-      if (timer) clearTimeout(timer)
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current)
+        countdownTimerRef.current = null
+      }
     }
-  }, [timeLeft, gameState, showResult, gameMode])
+  }, [showCountdown, countdownValue])
 
   const cleanup = useCallback(() => {
     console.log("Cleaning up game page...")
-
-    if (autoAdvanceTimer.current) {
-      clearTimeout(autoAdvanceTimer.current)
-      autoAdvanceTimer.current = null
+    if (gameTimerRef.current) {
+      clearInterval(gameTimerRef.current)
+      gameTimerRef.current = null
     }
-
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = null
+    }
     if (subscriptionRef.current) {
       supabase.removeChannel(subscriptionRef.current)
       subscriptionRef.current = null
@@ -167,15 +177,16 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
 
       const { data: roomData, error: roomError } = await supabase
         .from("game_rooms")
-        .select(`
+        .select(
+          `
           *,
           quizzes (
             id,
             title,
+            total_time,
             questions (
               id,
               question_text,
-              time_limit,
               points,
               order_index,
               answer_options (
@@ -186,7 +197,8 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
               )
             )
           )
-        `)
+        `,
+        )
         .eq("id", resolvedParams.roomId)
         .single()
 
@@ -205,21 +217,40 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
 
       setRoom(roomData)
       setGameState(roomData.status)
-      setGameMode(roomData.mode || "multi")
-      setCurrentQuestion(roomData.current_question || 0)
+      setGameMode(roomData.mode || "multiplayer")
 
       // Sort questions by order
       const sortedQuestions = roomData.quizzes.questions.sort((a: any, b: any) => a.order_index - b.order_index)
       setQuestions(sortedQuestions)
 
-      // Initialize based on game mode
-      if (roomData.mode === "practice") {
-        const totalTime = sortedQuestions.reduce((acc: number, q: any) => acc + q.time_limit, 0)
-        setPracticeTimeLeft(totalTime)
-        setCurrentQuestion(0) // Always start from first question in practice
-      } else {
-        forceResetQuestionState(roomData.current_question, sortedQuestions)
+      // Set total time from quiz
+      const quizTotalTime = roomData.quizzes.total_time || 300
+      setTotalTime(quizTotalTime)
+
+      // Handle timer based on game state
+      if (roomData.status === "playing" && roomData.started_at) {
+        const startTime = new Date(roomData.started_at)
+        setGameStartTime(startTime)
+
+        const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
+        const remaining = Math.max(quizTotalTime - elapsed, 0)
+
+        setTimeLeft(remaining)
+
+        if (remaining <= 0) {
+          handleTimeUp()
+        } else {
+          // ADD THIS
+          if (elapsed < 10) {
+            setShowCountdown(true)
+            setCountdownValue(10 - elapsed)
+          } else {
+            setShowCountdown(false)
+          }
+        }
       }
+
+
 
       // Fetch participants
       await fetchParticipants()
@@ -227,43 +258,6 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       console.error("Error fetching game data:", error)
     }
   }
-
-  const forceResetQuestionState = useCallback(
-    (questionIndex: number, questionsArray: any[]) => {
-      if (gameMode === "practice") return // Don't reset in practice mode
-
-      console.log("FORCE RESET question state for question:", questionIndex)
-
-      isResetting.current = false
-
-      // Clear any existing auto-advance timer
-      if (autoAdvanceTimer.current) {
-        clearTimeout(autoAdvanceTimer.current)
-        autoAdvanceTimer.current = null
-      }
-
-      // FORCE reset ALL question-related state
-      setSelectedAnswer(null)
-      setShowResult(false)
-      setHasAnswered(false)
-
-      // Set timer for the new question
-      if (questionsArray && questionsArray[questionIndex]) {
-        const newTimeLimit = questionsArray[questionIndex].time_limit || 20
-        console.log("Setting time limit to:", newTimeLimit)
-        setTimeLeft(newTimeLimit)
-      } else {
-        setTimeLeft(20)
-      }
-
-      // Allow interactions after a short delay
-      setTimeout(() => {
-        isResetting.current = false
-        console.log("Reset complete, allowing interactions")
-      }, 100)
-    },
-    [gameMode],
-  )
 
   const fetchParticipants = async () => {
     try {
@@ -276,20 +270,68 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
       if (data) {
         setParticipants(data)
         const myData = data.find((p) => p.user_id === user?.id)
-        if (gameMode !== "practice") {
-          setCurrentQuestion(myData?.current_question || 0)
-        }
         setMyParticipant(myData)
         setIsFinished(myData?.is_finished || false)
+
+        // Load existing answers if participant exists and not already loaded
+        if (myData && !answersLoadedRef.current) {
+          await loadExistingAnswers(myData.id)
+          answersLoadedRef.current = true
+        }
       }
     } catch (error) {
       console.error("Error fetching participants:", error)
     }
   }
 
-  const setupSubscriptions = useCallback(() => {
-    if (gameMode === "practice") return // No real-time updates needed for practice mode
+  const loadExistingAnswers = async (participantId: string) => {
+    try {
+      console.log("Loading existing answers for participant:", participantId)
 
+      const { data: answersData, error } = await supabase
+        .from("game_answers")
+        .select(`
+          question_id,
+          selected_option_id,
+          selected_option:answer_options (
+            option_index
+          )
+        `)
+        .eq("room_id", resolvedParams.roomId)
+        .eq("participant_id", participantId)
+
+      if (error) {
+        console.error("Error loading existing answers:", error)
+        return
+      }
+
+      if (answersData && answersData.length > 0) {
+        const existingAnswers: { [key: number]: number } = {}
+
+        answersData.forEach((answer: any) => {
+          const questionIndex = questions.findIndex((q) => q.id === answer.question_id)
+          if (questionIndex !== -1 && answer.selected_option) {
+            existingAnswers[questionIndex] = answer.selected_option.option_index
+          }
+        })
+
+        console.log("Loaded existing answers:", existingAnswers)
+        setAnswers(existingAnswers)
+      }
+    } catch (error) {
+      console.error("Error loading existing answers:", error)
+    }
+  }
+
+  // Load answers when questions are available and participant is set
+  useEffect(() => {
+    if (questions.length > 0 && myParticipant && !answersLoadedRef.current) {
+      loadExistingAnswers(myParticipant.id)
+      answersLoadedRef.current = true
+    }
+  }, [questions, myParticipant])
+
+  const setupSubscriptions = useCallback(() => {
     console.log("Setting up real-time subscriptions...")
 
     // Clean up existing subscription
@@ -298,12 +340,7 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     }
 
     const channel = supabase
-      .channel(`game-${resolvedParams.roomId}-${Date.now()}`, {
-        config: {
-          broadcast: { self: false },
-          presence: { key: user?.id },
-        },
-      })
+      .channel(`game-${resolvedParams.roomId}-${Date.now()}`)
       .on(
         "postgres_changes",
         {
@@ -315,31 +352,45 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
         (payload) => {
           console.log("Room update received:", payload)
           const newData = payload.new as any
-          const now = Date.now()
 
-          // Debounce rapid updates
-          if (now - lastQuestionUpdate.current < 500) {
-            console.log("Debouncing rapid update")
-            return
-          }
-
-          // Update game state
-          if (newData.status !== gameStateRef.current) {
-            console.log("Game state changed from", gameStateRef.current, "to", newData.status)
+          if (newData.status !== gameState) {
+            console.log("Game state changed to:", newData.status)
             setGameState(newData.status)
-          }
 
-          // Handle question change - ONLY if it's different from current
-          if (newData.current_question !== currentQuestionRef.current) {
-            console.log("Question changed from", currentQuestionRef.current, "to", newData.current_question)
-            lastQuestionUpdate.current = now
+            // Handle game start
+            if (newData.status === "playing" && newData.started_at) {
+              const startTime = new Date(newData.started_at)
+              setGameStartTime(startTime)
 
-            // IMMEDIATELY update current question
-            setCurrentQuestion(newData.current_question)
+              // Calculate remaining time based on actual elapsed time
+              const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
+              const remaining = Math.max(totalTime - elapsed, 0) // Use totalTime from state
 
-            // FORCE reset state for new question
-            if (questions.length > 0) {
-              forceResetQuestionState(newData.current_question, questions)
+              setTimeLeft(remaining)
+
+              if (remaining > 0) {
+                setShowCountdown(true) // Start 10-second countdown
+                setCountdownValue(10)
+                // toast({
+                //   title: "Game Dimulai!",
+                //   description: "Bersiaplah! Quiz akan segera dimulai...",
+                // })
+              } else {
+                handleTimeUp() // If no time left, immediately handle time up
+              }
+            }
+
+            // Handle game finish
+            if (newData.status === "finished") {
+              setIsFinished(true)
+              if (gameTimerRef.current) {
+                clearInterval(gameTimerRef.current)
+                gameTimerRef.current = null
+              }
+              if (countdownTimerRef.current) {
+                clearInterval(countdownTimerRef.current)
+                countdownTimerRef.current = null
+              }
             }
           }
         },
@@ -352,70 +403,63 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
           table: "game_participants",
           filter: `room_id=eq.${resolvedParams.roomId}`,
         },
-        (payload) => {
-          const newData = payload.new
-
-          if (newData.user_id === user?.id) {
-            if (newData.current_question !== currentQuestionRef.current) {
-              console.log("Your question index updated to:", newData.current_question)
-              setCurrentQuestion(newData.current_question)
-              forceResetQuestionState(newData.current_question, questions)
-            }
-          }
-
+        () => {
           fetchParticipants()
         },
       )
       .subscribe((status) => {
         console.log("Subscription status:", status)
-        if (status === "SUBSCRIBED") {
-          console.log("Successfully subscribed to real-time updates")
-        } else if (status === "CHANNEL_ERROR") {
-          console.error("Subscription error, retrying...")
-          setTimeout(() => {
-            setupSubscriptions()
-          }, 2000)
-        }
       })
 
     subscriptionRef.current = channel
-  }, [resolvedParams.roomId, user?.id, questions, forceResetQuestionState, gameMode])
+  }, [resolvedParams.roomId, gameState, totalTime])
 
   // Re-setup subscriptions when questions are loaded
   useEffect(() => {
-    if (questions.length > 0 && user && !subscriptionRef.current && gameMode !== "practice") {
+    if (questions.length > 0 && user && !subscriptionRef.current) {
       setupSubscriptions()
     }
-  }, [questions, user, setupSubscriptions, gameMode])
+  }, [questions, user, setupSubscriptions])
 
-  // Practice mode functions
-  const handlePracticeAnswerSelect = (answerIndex: number) => {
-    if (isFinished) return
+  // Handle answer selection with improved persistence and prevent auto-clicking
+  const handleAnswerSelect = async (answerIndex: number) => {
+    if (isFinished || gameState !== "playing" || showCountdown) return
 
-    const newAnswers = { ...practiceAnswers, [currentQuestion]: answerIndex }
-    setPracticeAnswers(newAnswers)
+    // Prevent rapid clicking
+    const button = document.activeElement as HTMLButtonElement
+    if (button) {
+      button.disabled = true
+      setTimeout(() => {
+        button.disabled = false
+      }, 500)
+    }
 
-    // Auto-save answer
-    savePracticeAnswer(answerIndex)
+    console.log("Answer selected:", answerIndex, "for question:", currentQuestion)
+
+    const newAnswers = { ...answers, [currentQuestion]: answerIndex }
+    setAnswers(newAnswers)
+
+    // Save answer immediately
+    await saveAnswer(answerIndex)
+
+    // toast({
+    //   title: "Jawaban Tersimpan",
+    //   description: `Jawaban untuk pertanyaan ${currentQuestion + 1} telah disimpan`,
+    // })
   }
 
-  const savePracticeAnswer = async (answerIndex: number) => {
+  const saveAnswer = async (answerIndex: number) => {
     if (!myParticipant || !questions[currentQuestion]) return
 
     const question = questions[currentQuestion]
     const selectedOption = question.answer_options.find((opt: any) => opt.option_index === answerIndex)
     const isCorrect = selectedOption?.is_correct || false
 
-    // Calculate speed-based points for practice mode
-    const startTime = new Date(room.practice_started_at).getTime()
-    const now = Date.now()
-    const totalElapsed = Math.floor((now - startTime) / 1000)
-    const totalTime = questions.reduce((acc, q) => acc + q.time_limit, 0)
-    const speedBonus = Math.max(0.1, (totalTime - totalElapsed) / totalTime)
-    const points = isCorrect ? Math.floor(question.points * speedBonus) : 0
+    // Calculate points (simple scoring for now)
+    const points = isCorrect ? question.points : 0
 
     try {
-      // Save or update answer
+      // Check if answer already exists
       const { data: existingAnswer, error: fetchError } = await supabase
         .from("game_answers")
         .select("id")
@@ -425,25 +469,32 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
         .maybeSingle()
 
       if (fetchError) {
-        console.error("Gagal cek jawaban:", fetchError)
+        console.error("Error checking existing answer:", fetchError)
         return
       }
 
+      const answerTime = gameStartTime ? Math.floor((Date.now() - gameStartTime.getTime()) / 1000) : 0
+
       if (existingAnswer) {
+        // Update existing answer
         const { error: updateError } = await supabase
           .from("game_answers")
           .update({
             selected_option_id: selectedOption?.id,
             is_correct: isCorrect,
             points_earned: points,
-            answer_time: totalElapsed,
+            answer_time: answerTime,
+            answered_at: new Date().toISOString(),
           })
           .eq("id", existingAnswer.id)
 
         if (updateError) {
-          console.error("Gagal update jawaban:", updateError)
+          console.error("Error updating answer:", updateError)
+        } else {
+          console.log("Answer updated successfully")
         }
       } else {
+        // Insert new answer
         const { error: insertError } = await supabase.from("game_answers").insert({
           room_id: resolvedParams.roomId,
           participant_id: myParticipant.id,
@@ -451,20 +502,56 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
           selected_option_id: selectedOption?.id,
           is_correct: isCorrect,
           points_earned: points,
-          answer_time: totalElapsed,
+          answer_time: answerTime,
+          answered_at: new Date().toISOString(),
         })
 
         if (insertError) {
-          console.error("Gagal insert jawaban:", insertError)
+          console.error("Error inserting answer:", insertError)
+        } else {
+          console.log("Answer inserted successfully")
         }
       }
+
+      // Update participant score
+      await updateParticipantScore()
     } catch (error) {
-      console.error("Error saving practice answer:", error)
+      console.error("Error saving answer:", error)
     }
   }
 
+  const updateParticipantScore = async () => {
+    if (!myParticipant) return
+
+    try {
+      // Calculate total score from all answers
+      const { data: answersData } = await supabase
+        .from("game_answers")
+        .select("points_earned")
+        .eq("room_id", resolvedParams.roomId)
+        .eq("participant_id", myParticipant.id)
+
+      const totalScore = answersData?.reduce((acc, answer) => acc + answer.points_earned, 0) || 0
+
+      // Update participant score
+      const { error } = await supabase
+        .from("game_participants")
+        .update({ score: totalScore })
+        .eq("id", myParticipant.id)
+
+      if (error) {
+        console.error("Error updating participant score:", error)
+      } else {
+        setMyParticipant({ ...myParticipant, score: totalScore })
+      }
+    } catch (error) {
+      console.error("Error updating participant score:", error)
+    }
+  }
+
+  // Navigation functions
   const navigateQuestion = (direction: "prev" | "next") => {
-    if (isFinished) return
+    if (isFinished || showCountdown) return
 
     if (direction === "prev" && currentQuestion > 0) {
       setCurrentQuestion(currentQuestion - 1)
@@ -473,18 +560,25 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
     }
   }
 
-  const finishPractice = async () => {
+  const goToQuestion = (questionIndex: number) => {
+    if (isFinished || showCountdown) return
+    setCurrentQuestion(questionIndex)
+  }
+
+  // Finish quiz
+  const finishQuiz = async () => {
+    console.log("Trying to finish quiz...")
     if (!myParticipant) return
 
     try {
       // Calculate total score from all answers
-      const { data: answers } = await supabase
+      const { data: answersData } = await supabase
         .from("game_answers")
         .select("points_earned")
         .eq("room_id", resolvedParams.roomId)
         .eq("participant_id", myParticipant.id)
 
-      const totalScore = answers?.reduce((acc, answer) => acc + answer.points_earned, 0) || 0
+      const totalScore = answersData?.reduce((acc, answer) => acc + answer.points_earned, 0) || 0
 
       // Update participant as finished
       const { error } = await supabase
@@ -496,25 +590,41 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
         })
         .eq("id", myParticipant.id)
 
-      if (error) throw error
+      // if (error) throw error
+      if (error) {
+        console.error("Error finishing quiz:", error)
+      } else {
+        console.log("Quiz finished successfully")
+      }
+
 
       setIsFinished(true)
 
-      toast({
-        title: "Practice Selesai!",
-        description: `Skor akhir Anda: ${totalScore} poin`,
-      })
+      // Clear timers
+      if (gameTimerRef.current) {
+        clearInterval(gameTimerRef.current)
+        gameTimerRef.current = null
+      }
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current)
+        countdownTimerRef.current = null
+      }
 
-      // Check if this was the first to finish - if so, end the game for everyone
+      // toast({
+      //   title: "Quiz Selesai!",
+      //   description: `Skor Anda: ${totalScore.toLocaleString()} poin`,
+      // })
+
+      // Check if all players finished (for solo mode or last player)
       const { data: allParticipants } = await supabase
         .from("game_participants")
         .select("is_finished")
         .eq("room_id", resolvedParams.roomId)
 
-      const finishedCount = allParticipants?.filter((p) => p.is_finished).length || 0
+      const allFinished = allParticipants?.every((p) => p.is_finished) || false
 
-      if (finishedCount === 1) {
-        // First to finish - end the game for everyone
+      if (allFinished || gameMode === "solo") {
+        // End the game
         await supabase
           .from("game_rooms")
           .update({
@@ -522,196 +632,145 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
             finished_at: new Date().toISOString(),
           })
           .eq("id", resolvedParams.roomId)
+          .then((res) => console.log("✅ Room marked as finished:", res))
 
-        toast({
-          title: "🎉 Anda Juara!",
-          description: "Anda adalah yang pertama selesai! Game berakhir untuk semua pemain.",
-        })
       }
     } catch (error) {
-      console.error("Error finishing practice:", error)
+      console.error("Error finishing quiz:", error)
       toast({
         title: "Error",
-        description: "Gagal menyelesaikan practice",
-        variant: "destructive",
-      })
-    }
-  }
-
-  useEffect(() => {
-    if (room?.mode === "practice" && room.practice_started_at && questions.length > 0) {
-      const totalTime = questions.reduce((acc, q) => acc + q.time_limit, 0)
-
-      const startTime = new Date(room.practice_started_at).getTime()
-      const now = Date.now()
-      const elapsed = Math.floor((now - startTime) / 1000)
-
-      const remaining = Math.max(totalTime - elapsed, 0)
-      setPracticeTimeLeft(remaining)
-
-      if (remaining === 0 && !isFinished) {
-        handlePracticeTimeUp()
-      }
-    }
-  }, [room, questions, isFinished])
-
-  const handlePracticeTimeUp = () => {
-    toast({
-      title: "Waktu Habis!",
-      description: "Practice session berakhir karena waktu habis",
-    })
-    finishPractice()
-  }
-
-  // Regular game functions (non-practice)
-  const handleAnswerSelect = async (answerIndex: number) => {
-    if (
-      selectedAnswerRef.current !== null ||
-      showResultRef.current ||
-      hasAnsweredRef.current ||
-      !myParticipant ||
-      gameStateRef.current !== "playing" ||
-      isResetting.current ||
-      gameMode === "practice"
-    ) {
-      console.log("Answer selection blocked:", {
-        selectedAnswer: selectedAnswerRef.current,
-        showResult: showResultRef.current,
-        hasAnswered: hasAnsweredRef.current,
-        gameState: gameStateRef.current,
-        isResetting: isResetting.current,
-      })
-      return
-    }
-
-    console.log("Selecting answer:", answerIndex, "for question:", currentQuestionRef.current)
-    setSelectedAnswer(answerIndex)
-    setHasAnswered(true)
-
-    const question = questions[currentQuestionRef.current]
-    if (!question) {
-      console.error("Question not found for index:", currentQuestionRef.current)
-      return
-    }
-
-    const selectedOption = question.answer_options.find((opt: any) => opt.option_index === answerIndex)
-    const isCorrect = selectedOption?.is_correct || false
-
-    // Calculate points based on speed
-    const timeBonus = Math.max(0, timeLeft / question.time_limit)
-    const points = isCorrect ? Math.floor(question.points * (0.5 + 0.5 * timeBonus)) : 0
-
-    try {
-      // Save answer to database
-      await supabase.from("game_answers").insert({
-        room_id: resolvedParams.roomId,
-        participant_id: myParticipant.id,
-        question_id: question.id,
-        selected_option_id: selectedOption?.id,
-        is_correct: isCorrect,
-        points_earned: points,
-        answer_time: question.time_limit - timeLeft,
-      })
-
-      // Update participant score if correct
-      if (isCorrect) {
-        const { error: scoreError } = await supabase
-          .from("game_participants")
-          .update({ score: myParticipant.score + points })
-          .eq("id", myParticipant.id)
-
-        if (scoreError) {
-          console.error("Error updating score:", scoreError)
-        }
-      }
-
-      // Show result
-      setShowResult(true)
-      console.log("Answer submitted successfully, showing result")
-
-      // Auto-advance after 3 seconds
-      autoAdvanceTimer.current = setTimeout(() => {
-        updateMyQuestionIndex()
-      }, 3000)
-    } catch (error) {
-      console.error("Error submitting answer:", error)
-      setSelectedAnswer(null)
-      setHasAnswered(false)
-      toast({
-        title: "Error",
-        description: "Gagal menyimpan jawaban",
+        description: "Gagal menyelesaikan quiz",
         variant: "destructive",
       })
     }
   }
 
   const handleTimeUp = useCallback(() => {
-    if (!showResultRef.current && !hasAnsweredRef.current && !isResetting.current) {
-      console.log("⏰ Time up, showing result")
-      setShowResult(true)
-      setHasAnswered(true)
+    console.log("Time's up! Auto-finishing quiz...")
+    setIsFinished(true)
 
-      const tryUpdateAfterReady = () => {
-        if (!myParticipant || !questions.length) {
-          console.warn("⏳ myParticipant or questions not ready, retrying...")
-          setTimeout(tryUpdateAfterReady, 200)
-          return
-        }
-
-        updateMyQuestionIndex()
-      }
-
-      autoAdvanceTimer.current = setTimeout(() => {
-        tryUpdateAfterReady()
-      }, 2000)
+    // Clear timers
+    if (gameTimerRef.current) {
+      clearInterval(gameTimerRef.current)
+      gameTimerRef.current = null
     }
-  }, [myParticipant, questions])
-
-  const updateMyQuestionIndex = async () => {
-    if (!myParticipant) {
-      console.warn("⛔ myParticipant belum ready, skip update")
-      return
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = null
     }
 
-    if (!questions.length) {
-      console.warn("⛔ questions masih kosong, skip update")
-      return
-    }
+    toast({
+      title: "Waktu Habis!",
+      description: "Quiz berakhir karena waktu habis",
+      variant: "destructive",
+    })
 
-    const nextIndex = (myParticipant?.current_question || 0) + 1
-    const totalQuestions = questions.length
+    // Auto-finish the quiz
+    finishQuiz()
+  }, [myParticipant])
 
-    console.log("🔥 Trying to update to question:", nextIndex, "of", totalQuestions)
-
-    if (nextIndex < totalQuestions) {
-      try {
-        const { error } = await supabase
-          .from("game_participants")
-          .update({ current_question: nextIndex })
-          .eq("id", myParticipant.id)
-
-        if (error) {
-          console.error("❌ Error updating my question index:", error)
-        } else {
-          console.log("✅ Updated to next question:", nextIndex)
-        }
-
-        await fetchParticipants()
-      } catch (err) {
-        console.error("🔥 Failed to update question index:", err)
-      }
-    } else {
-      console.log("✅ Game finished locally, all questions done")
-      await supabase
-        .from("game_rooms")
-        .update({
-          status: "finished",
-          finished_at: new Date().toISOString(),
-        })
-        .eq("id", resolvedParams.roomId)
-      setGameState("finished")
-    }
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
   }
+
+  const getTimeColor = () => {
+    if (timeLeft <= 0) return "text-red-600"
+    const percentage = (timeLeft / totalTime) * 100
+    if (percentage > 50) return "text-green-600"
+    if (percentage > 20) return "text-yellow-600"
+    return "text-red-600"
+  }
+
+  // Podium Component for Final Results Only
+  const PodiumLeaderboard = ({ participants }: { participants: any[] }) => {
+    const topThree = participants.slice(0, 3)
+    const remaining = participants.slice(3, 10)
+
+    return (
+      <div className="space-y-4">
+        {/* Podium for Top 3 */}
+        {topThree.length > 0 && (
+          <div className="relative">
+            <div className="flex items-end justify-center gap-2 mb-4">
+              {/* 2nd Place */}
+              {topThree[1] && (
+                <div className="flex flex-col items-center">
+                  <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center mb-1">
+                    <Medal className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="bg-gray-400 text-white px-2 py-3 rounded-t text-center min-w-[60px] text-xs">
+                    <div className="font-bold">2</div>
+                    <div className="truncate text-xs">{topThree[1].nickname}</div>
+                    <div className="font-bold text-xs">{topThree[1].score.toLocaleString()}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* 1st Place */}
+              {topThree[0] && (
+                <div className="flex flex-col items-center">
+                  <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center mb-1">
+                    <Crown className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="bg-yellow-500 text-white px-2 py-4 rounded-t text-center min-w-[70px] text-xs">
+                    <div className="text-sm font-bold">1</div>
+                    <div className="truncate text-xs font-medium">{topThree[0].nickname}</div>
+                    <div className="font-bold text-xs">{topThree[0].score.toLocaleString()}</div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3rd Place */}
+              {topThree[2] && (
+                <div className="flex flex-col items-center">
+                  <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center mb-1">
+                    <Medal className="w-4 h-4 text-white" />
+                  </div>
+                  <div className="bg-orange-500 text-white px-2 py-2 rounded-t text-center min-w-[60px] text-xs">
+                    <div className="font-bold">3</div>
+                    <div className="truncate text-xs">{topThree[2].nickname}</div>
+                    <div className="font-bold text-xs">{topThree[2].score.toLocaleString()}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Remaining Players (4-10) */}
+        {remaining.length > 0 && (
+          <div className="space-y-1">
+            {remaining.map((participant, index) => (
+              <div
+                key={participant.id}
+                className={`flex items-center justify-between p-2 rounded text-xs ${participant.id === myParticipant?.id
+                  ? "bg-blue-50 border border-blue-200"
+                  : "bg-gray-50 border border-gray-200"
+                  }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 bg-gray-300 rounded-full flex items-center justify-center text-white font-bold text-xs">
+                    {index + 4}
+                  </div>
+                  <span className="font-medium truncate">
+                    {participant.nickname}
+                    {participant.fullname && <span className="text-gray-500"> ({participant.fullname})</span>}
+                  </span>
+                </div>
+                <span className="font-bold">{participant.score.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Check if all questions are answered
+  const allQuestionsAnswered = questions.every((_, index) => answers[index] !== undefined)
+  const answeredCount = Object.keys(answers).length
 
   if (loading) {
     return (
@@ -731,19 +790,47 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
 
   if (gameState === "waiting") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="p-8">
-            <h2 className="text-2xl font-bold mb-4">Menunggu Host</h2>
-            <p className="text-gray-600 mb-6">
-              {gameMode === "practice" ? "Practice session" : "Game"} akan dimulai sebentar lagi...
-            </p>
-            <div className="animate-pulse">
-              <Users className="w-12 h-12 mx-auto text-purple-600" />
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg text-center rounded-xl shadow-2xl border-0 bg-white">
+          <CardContent className="p-10">
+            <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-xl animate-pulse">
+              <Users className="w-12 h-12 text-white" />
             </div>
-            <p className="text-sm text-gray-500 mt-4">
-              Room: {room.room_code} | Mode: {gameMode} | Status: {gameState}
-            </p>
+            <h2 className="text-4xl font-bold mb-4 text-gray-900">Menunggu Host</h2>
+            <p className="text-gray-600 mb-8 text-xl">Game akan dimulai sebentar lagi...</p>
+
+            <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-6 border-2 border-blue-200">
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <p className="text-gray-600 font-medium mb-1">Room Code</p>
+                  <p className="text-3xl font-bold text-blue-600">{room.room_code}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600 font-medium mb-1">Mode</p>
+                  <p className="text-lg font-semibold text-purple-600">
+                    {gameMode === "solo" ? "Solo" : "Multiplayer"}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-blue-200">
+                <p className="text-gray-600 font-medium mb-1">Durasi</p>
+                <p className="text-lg font-semibold text-gray-800">{formatTime(totalTime)}</p>
+              </div>
+            </div>
+
+            <div className="mt-8">
+              <div className="flex items-center justify-center gap-2 text-gray-500">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                <div
+                  className="w-2 h-2 bg-purple-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0.1s" }}
+                ></div>
+                <div
+                  className="w-2 h-2 bg-pink-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0.2s" }}
+                ></div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -752,104 +839,74 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
 
   if (gameState === "finished") {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-500 to-blue-500 flex items-center justify-center p-4">
-        <div className="w-full max-w-4xl">
-          <Card className="border-0 shadow-2xl">
+      <div className="min-h-screen bg-gradient-to-br from-emerald-600 to-blue-600 flex items-center justify-center p-4">
+        <div className="w-full max-w-4xl animate-fade-in">
+          <Card className="border-0 shadow-2xl rounded-xl">
             <CardContent className="p-8">
               <div className="text-center mb-8">
-                <Trophy className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-                <h2 className="text-3xl font-bold mb-6">
-                  {gameMode === "practice" ? "Practice Selesai!" : "Game Selesai!"}
-                </h2>
+                <Trophy className="w-20 h-20 text-yellow-300 mx-auto mb-4" />
+                <h2 className="text-4xl font-bold mb-6 text-black drop-shadow-md">Quiz Selesai!</h2>
+                <p className="text-xl text-white/90">Terima kasih telah berpartisipasi</p>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                {/* Leaderboard */}
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <h3 className="text-xl font-semibold mb-4">🏆 Leaderboard Final</h3>
-                  <div className="space-y-3">
-                    {participants.slice(0, 5).map((participant, index) => (
-                      <div key={participant.id} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${index === 0
-                                ? "bg-yellow-500"
-                                : index === 1
-                                  ? "bg-gray-400"
-                                  : index === 2
-                                    ? "bg-orange-500"
-                                    : "bg-gray-300"
-                              }`}
-                          >
-                            {index + 1}
-                          </div>
-                          <span className="font-semibold">{participant.nickname}</span>
-                          {index === 0 && <span className="text-yellow-600">👑</span>}
+                {/* My Results */}
+                {myParticipant && (
+                  <Card className="bg-white rounded-lg shadow-md">
+                    <CardContent className="p-6">
+                      <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-gray-800">🎯 Hasil Anda</h3>
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600">Skor Total:</span>
+                          <span className="text-2xl font-bold text-emerald-600">
+                            {myParticipant.score.toLocaleString()}
+                          </span>
                         </div>
-                        <span className="font-bold">{participant.score.toLocaleString()}</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600">Posisi:</span>
+                          <span className="text-xl font-bold text-blue-600">
+                            #{participants.findIndex((p) => p.id === myParticipant.id) + 1}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600">Jawaban Benar:</span>
+                          <span className="text-lg font-semibold text-gray-800">
+                            {answeredCount}/{questions.length}
+                          </span>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Question Recap */}
-                <div className="bg-gray-50 rounded-lg p-6 max-h-96 overflow-y-auto">
-                  <h3 className="text-xl font-semibold mb-4">📝 Rekap Soal & Jawaban</h3>
-                  <div className="space-y-4">
-                    {questions.map((question, qIndex) => {
-                      const myAnswer = practiceAnswers[qIndex]
-                      const correctAnswer = question.answer_options.find((opt: any) => opt.is_correct)
-                      const mySelectedOption = question.answer_options.find((opt: any) => opt.option_index === myAnswer)
+                      {/* View Recap Button */}
+                      <div className="mt-6">
+                        <Button
+                          onClick={() => router.push(`/recap/${resolvedParams.roomId}`)}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg shadow-md hover:shadow-lg transition-all"
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          Lihat Rekap Jawaban
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
-                      return (
-                        <div key={question.id} className="bg-white rounded-lg p-4 border">
-                          <div className="flex items-start gap-2 mb-3">
-                            <Badge variant="secondary" className="text-xs">
-                              {qIndex + 1}
-                            </Badge>
-                            <p className="text-sm font-medium">{question.question_text}</p>
-                          </div>
-
-                          <div className="ml-6 space-y-2 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="text-green-600 font-semibold">✓ Benar:</span>
-                              <span>{correctAnswer?.option_text}</span>
-                            </div>
-
-                            {myAnswer !== undefined && (
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`font-semibold ${mySelectedOption?.is_correct ? "text-green-600" : "text-red-600"}`}
-                                >
-                                  {mySelectedOption?.is_correct ? "✓" : "✗"} Jawaban Anda:
-                                </span>
-                                <span>{mySelectedOption?.option_text}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
+                {/* Leaderboard with Podium */}
+                <Card className="bg-white rounded-lg shadow-md">
+                  <CardContent className="p-6">
+                    <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-gray-800">🏆 Leaderboard</h3>
+                    <div className="max-h-64 overflow-y-auto">
+                      <PodiumLeaderboard participants={participants} />
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
-              {/* My Final Position */}
-              {myParticipant && (
-                <div className="bg-blue-50 rounded-lg p-4 mb-6">
-                  <h4 className="font-semibold text-blue-800 mb-2">Posisi Anda</h4>
-                  <div className="flex items-center justify-center gap-4">
-                    <div className="text-2xl font-bold text-blue-600">
-                      #{participants.findIndex((p) => p.id === myParticipant.id) + 1}
-                    </div>
-                    <div className="text-lg text-blue-700">{myParticipant.score.toLocaleString()} poin</div>
-                  </div>
-                </div>
-              )}
-
               <div className="text-center">
-                <Button onClick={() => router.push("/dashboard")} className="bg-blue-600 hover:bg-blue-700">
-                  <Home className="w-4 h-4 mr-2" />
+                <Button
+                  onClick={() => router.push("/dashboard")}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:shadow-xl transition-all text-lg"
+                >
+                  <Home className="w-5 h-5 mr-2" />
                   Kembali ke Dashboard
                 </Button>
               </div>
@@ -872,211 +929,30 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
   const question = questions[currentQuestion]
   const progress = ((currentQuestion + 1) / questions.length) * 100
 
-  // Practice Mode UI
-  if (gameMode === "practice") {
-    const formatTime = (seconds: number) => {
-      const mins = Math.floor(seconds / 60)
-      const secs = seconds % 60
-      return `${mins}:${secs.toString().padStart(2, "0")}`
-    }
-
-    // Check if all questions are answered
-    const allQuestionsAnswered = questions.every((_, index) => practiceAnswers[index] !== undefined)
-
-    return (
-      <div className="min-h-screen bg-gray-100">
-        <div className="max-w-6xl mx-auto p-4">
-          {/* Practice Header */}
-          <div className="bg-gradient-to-r from-orange-600 to-yellow-600 rounded-lg p-6 text-white mb-6">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <div className="text-lg font-semibold">
-                  Practice Mode - Pertanyaan {currentQuestion + 1} dari {questions.length}
-                </div>
-                <div className="text-sm opacity-90">{room.quizzes.title}</div>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  <span className="text-sm">{participants.length}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-5 h-5" />
-                  <span className="text-2xl font-bold">{formatTime(practiceTimeLeft)}</span>
-                </div>
-                {isFinished && <div className="bg-green-500 px-3 py-1 rounded-full text-sm font-bold">✓ Selesai</div>}
-              </div>
-            </div>
-            <Progress value={progress} className="h-2 bg-white/20" />
-            <div className="text-xs opacity-75 mt-2">
-              Navigasi bebas • Waktu total: {formatTime(practiceTimeLeft)} • Klik selesai kapan saja
-            </div>
+  // Main Game UI - E-learning Style (NO LEADERBOARD DURING PLAY)
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      <header className="relative z-10 px-4 lg:px-6 h-16 flex items-center bg-white shadow-md border-b border-gray-100">
+        <Link href="/dashboard" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
+          <ArrowLeft className="w-5 h-5" />
+          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+            <Play className="w-6 h-6 text-white fill-current" />
           </div>
+          <span className="font-bold text-2xl text-gray-900">Sinauverse</span>
+        </Link>
+      </header>
 
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Question */}
-            <div className="lg:col-span-3">
-              <Card className="border-0 shadow-lg">
-                <CardContent className="p-8">
-                  <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-8 leading-tight text-center">
-                    {question.question_text}
-                  </h2>
-
-                  {/* Answer Options */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto mb-8">
-                    {question.answer_options
-                      .sort((a: any, b: any) => a.option_index - b.option_index)
-                      .map((option: any, index: number) => {
-                        const isSelected = practiceAnswers[currentQuestion] === index
-                        let buttonClass = `${answerColors[index]} text-white text-xl font-bold py-6 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 relative overflow-hidden`
-
-                        if (isSelected) {
-                          buttonClass += " ring-4 ring-white shadow-2xl scale-105"
-                        }
-
-                        if (isFinished) {
-                          buttonClass =
-                            "bg-gray-400 text-white text-xl font-bold py-6 px-8 rounded-2xl relative overflow-hidden opacity-50 cursor-not-allowed"
-                        }
-
-                        return (
-                          <Button
-                            key={`${question.id}-${option.id}`}
-                            onClick={() => handlePracticeAnswerSelect(index)}
-                            disabled={isFinished}
-                            className={buttonClass}
-                          >
-                            <span className="text-3xl mr-3">{answerShapes[index]}</span>
-                            {option.option_text}
-                            {isSelected && <CheckCircle className="w-6 h-6 ml-3" />}
-                          </Button>
-                        )
-                      })}
-                  </div>
-
-                  {/* Navigation Controls */}
-                  <div className="flex justify-between items-center mt-8">
-                    <Button
-                      onClick={() => navigateQuestion("prev")}
-                      disabled={currentQuestion === 0 || isFinished}
-                      variant="outline"
-                      className="flex items-center gap-2"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      Sebelumnya
-                    </Button>
-
-                    <div className="flex gap-2">
-                      {!isFinished && allQuestionsAnswered && (
-                        <Button onClick={finishPractice} className="bg-green-600 hover:bg-green-700 px-8">
-                          <CheckCircle className="w-4 h-4 mr-2" />
-                          Selesai Practice
-                        </Button>
-                      )}
-                      {!isFinished && !allQuestionsAnswered && (
-                        <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-lg text-sm">
-                          Jawab semua soal untuk menyelesaikan practice ({Object.keys(practiceAnswers).length}/
-                          {questions.length})
-                        </div>
-                      )}
-                    </div>
-
-                    <Button
-                      onClick={() => navigateQuestion("next")}
-                      disabled={currentQuestion === questions.length - 1 || isFinished}
-                      variant="outline"
-                      className="flex items-center gap-2"
-                    >
-                      Selanjutnya
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-
-                  {/* Question Progress Indicator */}
-                  <div className="flex justify-center mt-6">
-                    <div className="flex gap-2">
-                      {questions.map((_, index) => (
-                        <button
-                          key={index}
-                          onClick={() => !isFinished && setCurrentQuestion(index)}
-                          disabled={isFinished}
-                          className={`w-8 h-8 rounded-full text-xs font-bold transition-all ${index === currentQuestion
-                              ? "bg-orange-500 text-white"
-                              : practiceAnswers[index] !== undefined
-                                ? "bg-green-500 text-white"
-                                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
-                            }`}
-                        >
-                          {index + 1}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* My Score */}
-                  {myParticipant && (
-                    <div className="mt-8 text-center">
-                      <div className="inline-flex items-center gap-2 bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full font-bold">
-                        <Trophy className="w-5 h-5" />
-                        Poin Saya: {myParticipant.score.toLocaleString()}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Leaderboard */}
-            <div className="lg:col-span-1">
-              <Card className="border-0 shadow-lg">
-                <CardContent className="p-6">
-                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <Trophy className="w-5 h-5" />
-                    Leaderboard
-                  </h3>
-                  <div className="space-y-3">
-                    {participants.slice(0, 10).map((participant, index) => (
-                      <div
-                        key={participant.id}
-                        className={`flex items-center justify-between p-2 rounded-lg ${participant.id === myParticipant?.id ? "bg-blue-50 border border-blue-200" : "bg-gray-50"
-                          }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${participant.is_finished
-                                ? "bg-green-500"
-                                : index === 0
-                                  ? "bg-yellow-500"
-                                  : index === 1
-                                    ? "bg-gray-400"
-                                    : index === 2
-                                      ? "bg-orange-500"
-                                      : "bg-gray-300"
-                              }`}
-                          >
-                            {participant.is_finished ? "✓" : index + 1}
-                          </div>
-                          <span className="text-sm font-medium truncate">{participant.nickname}</span>
-                        </div>
-                        <span className="text-sm font-bold">{participant.score.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+      {showCountdown && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="text-white text-9xl font-extrabold animate-pulse">
+            {countdownValue > 0 ? countdownValue : "GO!"}
           </div>
         </div>
-      </div>
-    )
-  }
+      )}
 
-  // Regular Game Mode UI (Solo/Multi)
-  return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="max-w-6xl mx-auto p-4">
+      <div className="max-w-4xl mx-auto p-4">
         {/* Header */}
-        <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg p-6 text-white mb-6">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg p-6 text-white mb-6 shadow-lg">
           <div className="flex justify-between items-center mb-4">
             <div>
               <div className="text-lg font-semibold">
@@ -1085,136 +961,150 @@ export default function GamePage({ params }: { params: Promise<{ roomId: string 
               <div className="text-sm opacity-90">{room.quizzes.title}</div>
             </div>
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-white/20 px-3 py-1 rounded-full text-sm">
                 <Users className="w-4 h-4" />
-                <span className="text-sm">{participants.length}</span>
+                <span className="font-medium">{participants.length}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5" />
-                <span className="text-2xl font-bold">{timeLeft}</span>
+              <div className="flex items-center gap-2 bg-white/20 px-3 py-1 rounded-full">
+                <Timer className="w-5 h-5" />
+                <span className={`text-2xl font-bold ${getTimeColor()}`}>
+                  {timeLeft > 0 ? formatTime(timeLeft) : "0:00"}
+                </span>
               </div>
+              {isFinished && (
+                <Badge className="bg-emerald-500 text-white px-3 py-1 rounded-full text-sm font-bold shadow-md">
+                  ✓ Selesai
+                </Badge>
+              )}
             </div>
           </div>
-          <Progress value={progress} className="h-2 bg-white/20" />
+          <Progress value={progress} className="h-2 bg-white/20" indicatorClassName="bg-white" />
+          <div className="text-xs opacity-75 mt-2">
+            Dijawab: {answeredCount}/{questions.length} • Mode: {gameMode === "solo" ? "Solo" : "Multiplayer"} • Waktu
+            tersisa: {timeLeft > 0 ? formatTime(timeLeft) : "Habis"}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Question */}
-          <div className="lg:col-span-3">
-            <Card className="border-0 shadow-lg">
-              <CardContent className="p-8 text-center">
-                <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-8 leading-tight">
-                  {question.question_text}
-                </h2>
+        {/* Question - Full Width */}
+        <Card className="border-0 shadow-lg rounded-xl">
+          <CardContent className="p-8">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-8 leading-tight text-center animate-pop-in">
+              {question.question_text}
+            </h2>
 
-                {/* Answer Options */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto mb-8">
-                  {question.answer_options
-                    .sort((a: any, b: any) => a.option_index - b.option_index)
-                    .map((option: any, index: number) => {
-                      let buttonClass = `${answerColors[index]} text-white text-xl font-bold py-6 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 relative overflow-hidden`
+            {/* Answer Options */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto mb-8">
+              {question.answer_options
+                .sort((a: any, b: any) => a.option_index - b.option_index)
+                .map((option: any, index: number) => {
+                  const isSelected = answers[currentQuestion] === index
+                  const answerColors = [
+                    "bg-red-500 hover:bg-red-600",
+                    "bg-blue-500 hover:bg-blue-600",
+                    "bg-yellow-500 hover:bg-yellow-600",
+                    "bg-emerald-500 hover:bg-emerald-600",
+                  ]
+                  const answerShapes = ["△", "◇", "○", "□"]
 
-                      if (showResult) {
-                        if (option.is_correct) {
-                          buttonClass =
-                            "bg-green-500 text-white text-xl font-bold py-6 px-8 rounded-2xl relative overflow-hidden ring-4 ring-green-300 animate-pulse"
-                        } else if (index === selectedAnswer) {
-                          buttonClass =
-                            "bg-red-500 text-white text-xl font-bold py-6 px-8 rounded-2xl relative overflow-hidden ring-4 ring-red-300"
-                        } else {
-                          buttonClass =
-                            "bg-gray-400 text-white text-xl font-bold py-6 px-8 rounded-2xl relative overflow-hidden opacity-50"
-                        }
-                      }
+                  let buttonClass = `${answerColors[index]} text-white text-xl font-bold py-6 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 relative overflow-hidden shadow-lg`
 
-                      return (
-                        <Button
-                          key={`${question.id}-${option.id}`}
-                          onClick={() => handleAnswerSelect(index)}
-                          disabled={selectedAnswer !== null || hasAnswered || isResetting.current}
-                          className={buttonClass}
-                        >
-                          <span className="text-3xl mr-3">{answerShapes[index]}</span>
-                          {option.option_text}
-                        </Button>
-                      )
-                    })}
-                </div>
+                  if (isSelected) {
+                    buttonClass += " ring-4 ring-white shadow-2xl scale-105"
+                  }
 
-                {/* Result Display */}
-                {showResult && (
-                  <div className="space-y-4">
-                    {selectedAnswer !== null && (
-                      <div className="text-center">
-                        {questions[currentQuestion].answer_options[selectedAnswer]?.is_correct ? (
-                          <div className="text-green-600 font-bold text-lg">✓ Benar!</div>
-                        ) : (
-                          <div className="text-red-600 font-bold text-lg">✗ Salah</div>
-                        )}
-                      </div>
-                    )}
+                  if (isFinished || showCountdown) {
+                    buttonClass =
+                      "bg-gray-400 text-white text-xl font-bold py-6 px-8 rounded-2xl relative overflow-hidden opacity-50 cursor-not-allowed shadow-md"
+                  }
 
-                    <div className="flex flex-col items-center gap-3">
-                      <p className="text-sm text-gray-500">
-                        {currentQuestion < questions.length - 1
-                          ? "Otomatis lanjut ke pertanyaan selanjutnya dalam beberapa detik..."
-                          : "Menunggu hasil akhir..."}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* My Score */}
-                {myParticipant && (
-                  <div className="mt-8">
-                    <div className="inline-flex items-center gap-2 bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full font-bold">
-                      <Trophy className="w-5 h-5" />
-                      Poin Saya: {myParticipant.score.toLocaleString()}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Leaderboard */}
-          <div className="lg:col-span-1">
-            <Card className="border-0 shadow-lg">
-              <CardContent className="p-6">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Trophy className="w-5 h-5" />
-                  Leaderboard
-                </h3>
-                <div className="space-y-3">
-                  {participants.slice(0, 10).map((participant, index) => (
-                    <div
-                      key={participant.id}
-                      className={`flex items-center justify-between p-2 rounded-lg ${participant.id === myParticipant?.id ? "bg-blue-50 border border-blue-200" : "bg-gray-50"
-                        }`}
+                  return (
+                    <Button
+                      key={`${question.id}-${option.id}`}
+                      onClick={() => handleAnswerSelect(index)}
+                      disabled={isFinished || showCountdown}
+                      className={buttonClass}
                     >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${index === 0
-                              ? "bg-yellow-500"
-                              : index === 1
-                                ? "bg-gray-400"
-                                : index === 2
-                                  ? "bg-orange-500"
-                                  : "bg-gray-300"
-                            }`}
-                        >
-                          {index + 1}
-                        </div>
-                        <span className="text-sm font-medium truncate">{participant.nickname}</span>
-                      </div>
-                      <span className="text-sm font-bold">{participant.score.toLocaleString()}</span>
-                    </div>
-                  ))}
+                      <span className="text-3xl mr-3">{answerShapes[index]}</span>
+                      {option.option_text}
+                      {isSelected && <CheckCircle className="w-6 h-6 ml-3" />}
+                    </Button>
+                  )
+                })}
+            </div>
+
+            {/* Navigation Controls */}
+            <div className="flex justify-between items-center mt-8">
+              <Button
+                onClick={() => navigateQuestion("prev")}
+                disabled={currentQuestion === 0 || isFinished || showCountdown}
+                variant="outline"
+                className="flex items-center gap-2 border-gray-300 text-gray-700 hover:bg-gray-100 shadow-sm px-6 py-3"
+              >
+                <ChevronLeft className="w-5 h-5" />
+                Sebelumnya
+              </Button>
+
+              <div className="flex gap-2">
+                {!isFinished && allQuestionsAnswered && (
+                  <Button
+                    onClick={finishQuiz}
+                    className="bg-emerald-600 hover:bg-emerald-700 px-8 font-bold rounded-full shadow-lg text-lg"
+                    disabled={showCountdown}
+                  >
+                    <Flag className="w-5 h-5 mr-2" />
+                    Selesai
+                  </Button>
+                )}
+                {!isFinished && !allQuestionsAnswered && (
+                  <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-lg text-sm font-medium shadow-sm">
+                    Jawab semua soal untuk menyelesaikan ({answeredCount}/{questions.length})
+                  </div>
+                )}
+              </div>
+
+              <Button
+                onClick={() => navigateQuestion("next")}
+                disabled={currentQuestion === questions.length - 1 || isFinished || showCountdown}
+                variant="outline"
+                className="flex items-center gap-2 border-gray-300 text-gray-700 hover:bg-gray-100 shadow-sm px-6 py-3"
+              >
+                Selanjutnya
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            </div>
+
+            {/* Question Progress Indicator */}
+            <div className="flex justify-center mt-6">
+              <div className="flex gap-2 flex-wrap">
+                {questions.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => !isFinished && !showCountdown && goToQuestion(index)}
+                    disabled={isFinished || showCountdown}
+                    className={`w-10 h-10 rounded-full text-sm font-bold transition-all shadow-sm ${index === currentQuestion
+                      ? "bg-blue-500 text-white scale-110 shadow-lg"
+                      : answers[index] !== undefined
+                        ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                        : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                      }`}
+                  >
+                    {index + 1}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* My Score */}
+            {/* {myParticipant && (
+              <div className="mt-8 text-center">
+                <div className="inline-flex items-center gap-2 bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full font-bold shadow-md">
+                  <Trophy className="w-5 h-5" />
+                  Poin Saya: {myParticipant.score.toLocaleString()}
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+              </div>
+            )} */}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

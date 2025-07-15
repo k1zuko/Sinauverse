@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Trophy, Users, Play, Crown, Home, CheckCircle, BookOpen, Timer } from "lucide-react"
+import { Trophy, Users, Play, Crown, Home, CheckCircle, BookOpen, Timer, ArrowLeft } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 import { QRCodeSVG } from "qrcode.react"
+import Link from "next/link"
 
 export default function PracticeHostPage({ params }: { params: Promise<{ roomId: string }> }) {
   const resolvedParams = use(params)
@@ -168,13 +169,6 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
         .eq("id", resolvedParams.roomId)
 
       if (error) throw error
-
-      toast({
-        title: "Practice Mode Dimulai!",
-        description: `Pemain memiliki ${totalTime >= 60
-          ? `${Math.round(totalTime / 60)} menit`
-          : `${totalTime} detik`} untuk menyelesaikan semua soal`,
-      })
     } catch (error) {
       console.error("Error starting game:", error)
       toast({
@@ -289,25 +283,32 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
 
   return (
     <div className="min-h-screen bg-gray-100">
+      <header className="relative z-10 px-4 lg:px-6 h-16 flex items-center bg-white shadow-md border-b border-gray-100">
+        <Link href="/dashboard" className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors">
+          <ArrowLeft className="w-5 h-5" />
+          <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center shadow-lg">
+            <Play className="w-6 h-6 text-white fill-current" />
+          </div>
+          <span className="font-bold text-2xl text-gray-900">Sinauverse</span>
+        </Link>
+      </header>
       <div className="max-w-7xl mx-auto p-4">
         {/* Header */}
-        <div className="bg-gradient-to-r from-orange-600 to-yellow-600 rounded-lg p-6 text-white mb-6">
+        <div className="bg-gradient-to-r from-orange-600 to-yellow-600 rounded-lg p-6 text-white mb-6 shadow-lg">
           <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-4">
-              <BookOpen className="w-8 h-8" />
+              <BookOpen className="w-8 h-8 text-white" />
               <div>
                 <h1 className="text-2xl font-bold">Practice Host Dashboard</h1>
                 <p className="text-sm opacity-90">{quiz.title}</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <Badge variant="secondary" className="bg-white/20 text-white">
-                Room: {room.room_code}
-              </Badge>
               <Badge
                 variant="secondary"
-                className={`${gameState === "waiting" ? "bg-yellow-500" : gameState === "playing" ? "bg-green-500" : "bg-gray-500"
-                  } text-white`}
+                className={`${
+                  gameState === "waiting" ? "bg-yellow-500" : gameState === "playing" ? "bg-emerald-500" : "bg-gray-500"
+                } text-white text-base px-4 py-1 rounded-full shadow-md`}
               >
                 {gameState === "waiting" ? "Menunggu" : gameState === "playing" ? "Practice Mode" : "Selesai"}
               </Badge>
@@ -316,7 +317,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
 
           {gameState === "playing" && (
             <div className="space-y-2">
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between text-sm font-medium">
                 <span>
                   Waktu Tersisa: {Math.floor(practiceTimeLeft / 60)}:
                   {(practiceTimeLeft % 60).toString().padStart(2, "0")}
@@ -328,6 +329,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
               <Progress
                 value={(finishedParticipants / Math.max(participants.length, 1)) * 100}
                 className="h-2 bg-white/20"
+                indicatorClassName="bg-white"
               />
               <div className="text-xs opacity-75">
                 Mode Practice: Pemain dapat navigasi bebas • Siapa cepat dia duluan!
@@ -337,38 +339,49 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Room Code & QR Code */}
+          <div className="lg:col-span-2">
+            <Card className="rounded-xl shadow-lg">
+              <CardContent className="flex flex-col items-center gap-3 justify-center text-center py-8">
+                <p className="text-3xl font-bold text-gray-800 pt-5">
+                  Kode Room: <span className="text-orange-600">{room.room_code}</span>
+                </p>
+                <p className="text-lg text-gray-600">atau</p>
+                <div className="p-4 bg-white rounded-lg shadow-md">
+                  <QRCodeSVG
+                    value={`${window.location.origin}/join?code=${room.room_code}`}
+                    size={200}
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                    level="H"
+                    className="mt-3"
+                  />
+                </div>
+                <p className="text-sm text-gray-500 mt-2">Scan untuk join game</p>
+              </CardContent>
+            </Card>
+          </div>
           {/* Game Status & Controls */}
-          <div className="lg:col-span-1">
-            <Card>
+          <div className="lg:col-span-2 space-y-5">
+            <Card className="rounded-xl shadow-lg">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Crown className="w-5 h-5" />
+                <CardTitle className="flex items-center gap-2 text-gray-800">
+                  <Crown className="w-5 h-5 text-yellow-500" />
                   Practice Control
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {gameState === "waiting" && (
                   <div className="space-y-4">
-                    <div className="text-center p-4 bg-orange-50 rounded-lg">
+                    <div className="text-center p-4 bg-orange-50 rounded-lg border border-orange-200 shadow-sm">
                       <Timer className="w-8 h-8 mx-auto text-orange-600 mb-2" />
                       <p className="text-sm text-orange-800">Menunggu pemain bergabung...</p>
                       <p className="text-xs text-orange-600 mt-1">{participants.length} pemain terdaftar</p>
                     </div>
-
-                    <div className="bg-blue-50 rounded-lg p-4">
-                      <h4 className="font-semibold text-blue-800 mb-2">Practice Mode Info</h4>
-                      <div className="space-y-1 text-sm text-blue-700">
-                        <p>• Total waktu: {Math.round(totalTime / 60)} menit</p>
-                        <p>• {questions.length} pertanyaan</p>
-                        <p>• Navigasi bebas (back/next)</p>
-                        <p>• Selesai kapan saja</p>
-                      </div>
-                    </div>
-
                     <Button
                       onClick={startGame}
                       disabled={actionLoading || participants.length === 0}
-                      className="w-full bg-orange-600 hover:bg-orange-700"
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-full shadow-md hover:shadow-lg transition-all"
                     >
                       <Play className="w-4 h-4 mr-2" />
                       {actionLoading ? "Memulai..." : "Mulai Practice Session"}
@@ -378,13 +391,13 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
 
                 {gameState === "playing" && (
                   <div className="space-y-4">
-                    <div className="text-center p-4 bg-green-50 rounded-lg">
-                      <BookOpen className="w-8 h-8 mx-auto text-green-600 mb-2" />
-                      <p className="text-sm text-green-800">Practice Session Aktif</p>
-                      <p className="text-xs text-green-600 mt-1">Pemain belajar dengan santai</p>
+                    <div className="text-center p-4 bg-emerald-50 rounded-lg border border-emerald-200 shadow-sm">
+                      <BookOpen className="w-8 h-8 mx-auto text-emerald-600 mb-2" />
+                      <p className="text-sm text-emerald-800">Practice Session Aktif</p>
+                      <p className="text-xs text-emerald-600 mt-1">Pemain belajar dengan santai</p>
                     </div>
 
-                    <div className="bg-blue-50 rounded-lg p-4">
+                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 shadow-sm">
                       <h4 className="font-semibold text-blue-800 mb-2">Progress Pemain</h4>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
@@ -404,7 +417,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
                       onClick={endGame}
                       disabled={actionLoading}
                       variant="destructive"
-                      className="w-full"
+                      className="w-full font-bold py-3 rounded-full shadow-md hover:shadow-lg transition-all"
                       size="sm"
                     >
                       {actionLoading ? "Menghentikan..." : "Akhiri Session"}
@@ -414,11 +427,14 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
 
                 {gameState === "finished" && (
                   <div className="space-y-4">
-                    <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
                       <Trophy className="w-8 h-8 mx-auto text-gray-600 mb-2" />
                       <p className="text-sm text-gray-800">Practice session selesai</p>
                     </div>
-                    <Button onClick={() => router.push("/dashboard")} className="w-full">
+                    <Button
+                      onClick={() => router.push("/dashboard")}
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-full shadow-md hover:shadow-lg transition-all"
+                    >
                       <Home className="w-4 h-4 mr-2" />
                       Kembali ke Dashboard
                     </Button>
@@ -426,21 +442,17 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
                 )}
               </CardContent>
             </Card>
-          </div>
-
-          {/* Participants List */}
-          <div className="lg:col-span-2 space-y-5">
-            <Card>
+            <Card className="rounded-xl shadow-lg">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-gray-800">
                   {gameState === "finished" ? (
                     <>
-                      <Trophy className="w-5 h-5" />
+                      <Trophy className="w-5 h-5 text-yellow-500" />
                       Hasil Practice ({participants.length} pemain)
                     </>
                   ) : (
                     <>
-                      <Users className="w-5 h-5" />
+                      <Users className="w-5 h-5 text-blue-500" />
                       Live Progress ({participants.length} pemain)
                     </>
                   )}
@@ -448,7 +460,7 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
               </CardHeader>
               <CardContent>
                 {participants.length === 0 ? (
-                  null
+                  <div className="text-center py-4 text-gray-500">Belum ada pemain bergabung.</div>
                 ) : (
                   <div className="space-y-3">
                     {participants.map((participant, index) => {
@@ -458,49 +470,52 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
                       return (
                         <div
                           key={participant.id}
-                          className={`p-4 rounded-lg border ${gameState === "finished"
-                            ? index === 0
-                              ? "bg-yellow-100 border-2 border-yellow-300"
-                              : "bg-gray-50"
-                            : participant.is_finished
-                              ? "bg-green-50 border border-green-200"
-                              : "bg-gray-50"
-                            }`}
+                          className={`p-4 rounded-lg border transition-all duration-200 ${
+                            gameState === "finished"
+                              ? index === 0
+                                ? "bg-yellow-100 border-2 border-yellow-300 shadow-md animate-pop-in"
+                                : "bg-gray-50 border-gray-200 shadow-sm"
+                              : participant.is_finished
+                                ? "bg-emerald-50 border border-emerald-200 shadow-sm"
+                                : "bg-gray-50 border-gray-200 shadow-sm"
+                          }`}
                         >
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-3">
                               <div
-                                className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${participant.is_finished
-                                  ? "bg-green-500"
-                                  : index === 0
-                                    ? "bg-yellow-500"
-                                    : index === 1
-                                      ? "bg-gray-400"
-                                      : index === 2
-                                        ? "bg-orange-500"
-                                        : "bg-gray-300"
-                                  }`}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                                  participant.is_finished
+                                    ? "bg-emerald-500"
+                                    : index === 0
+                                      ? "bg-yellow-500"
+                                      : index === 1
+                                        ? "bg-gray-400"
+                                        : index === 2
+                                          ? "bg-orange-500"
+                                          : "bg-gray-300"
+                                }`}
                               >
                                 {participant.is_finished ? "✓" : index + 1}
                               </div>
                               <div>
-                                <p className="font-semibold flex items-center gap-2">
-                                  {participant.nickname}
+                                <p className="font-semibold flex items-center gap-2 text-gray-800">
+                                  {participant.nickname} ({participant.fullname})
                                   {gameState === "finished" && index === 0 && (
                                     <span className="text-yellow-600">👑</span>
                                   )}
                                   {participant.is_finished && gameState === "playing" && (
-                                    <CheckCircle className="w-4 h-4 text-green-600" />
+                                    <CheckCircle className="w-4 h-4 text-emerald-600" />
                                   )}
                                 </p>
                                 <div className="flex items-center gap-4 text-xs text-gray-600">
                                   <span>Bergabung: {new Date(participant.joined_at).toLocaleTimeString()}</span>
                                   {gameState === "playing" && (
                                     <span
-                                      className={`px-2 py-1 rounded ${participant.is_finished
-                                        ? "bg-green-100 text-green-800"
-                                        : "bg-blue-100 text-blue-800"
-                                        }`}
+                                      className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                        participant.is_finished
+                                          ? "bg-emerald-100 text-emerald-800"
+                                          : "bg-blue-100 text-blue-800"
+                                      }`}
                                     >
                                       {participant.is_finished ? "✅ Selesai" : "📚 Belajar"}
                                     </span>
@@ -509,92 +524,30 @@ export default function PracticeHostPage({ params }: { params: Promise<{ roomId:
                               </div>
                             </div>
                             <div className="text-right">
-                              <p className="font-bold text-lg">{participant.score.toLocaleString()}</p>
+                              <p className="font-bold text-lg text-gray-900">{participant.score.toLocaleString()}</p>
                               <p className="text-sm text-gray-600">poin</p>
                             </div>
                           </div>
 
                           {/* Progress Bar */}
                           {gameState === "playing" && !participant.is_finished && (
-                            <div className="space-y-1">
+                            <div className="space-y-1 mt-2">
                               <div className="flex justify-between text-xs text-gray-600">
                                 <span>
                                   Progress: {progress}/{questions.length} soal
                                 </span>
                                 <span>{Math.round(progressPercentage)}%</span>
                               </div>
-                              <Progress value={progressPercentage} className="h-2" />
+                              <Progress
+                                value={progressPercentage}
+                                className="h-2 bg-gray-200"
+                                indicatorClassName="bg-blue-500"
+                              />
                             </div>
                           )}
-
-                          {/* {participant.is_finished && (
-                            <div className="mt-2 text-xs text-green-600 font-medium">
-                              ✅ Selesai pada: {new Date(participant.finished_at).toLocaleTimeString()}
-                            </div>
-                          )} */}
                         </div>
                       )
                     })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent>
-                <div className="flex flex-col items-center gap-3 justify-center text-center py-8 text-gray-500">
-                  <Users className="w-12 h-12 mx-auto opacity-50" />
-                  <p>Belum ada pemain yang bergabung</p>
-                  <p className="text-sm">
-                    Bagikan kode room: <strong>{room.room_code}</strong>
-                  </p>
-                  <QRCodeSVG
-                    value={`${window.location.origin}/join?code=${room.room_code}`}
-                    size={100}
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                    level="H"
-                    className="mt-3"
-                  />
-                  <p className="text-xs text-black opacity-70">Scan untuk join game</p>
-
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Questions Overview */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BookOpen className="w-5 h-5" />
-                  Soal Overview
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="max-h-96 overflow-y-auto">
-                {questions.length === 0 ? (
-                  <p className="text-sm text-gray-500">Loading questions...</p>
-                ) : (
-                  <div className="space-y-3">
-                    {questions.map((question, qIndex) => (
-                      <div key={question.id} className="p-3 rounded-lg border bg-gray-50 border-gray-200">
-                        <div className="flex items-start gap-2 mb-2">
-                          <Badge variant="secondary" className="text-xs">
-                            {qIndex + 1}
-                          </Badge>
-                          <p className="text-sm font-medium leading-tight">{question.question_text}</p>
-                        </div>
-                        <div className="ml-6 text-xs text-gray-500">
-                          {question.time_limit}s • {question.points} poin
-                        </div>
-                      </div>
-                    ))}
-                    <div className="mt-4 p-3 bg-orange-50 rounded-lg">
-                      <p className="text-sm font-semibold text-orange-800">Total Practice Time</p>
-                      <p className="text-lg font-bold text-orange-600">{totalTime >= 60
-                        ? `${Math.round(totalTime / 60)} menit`
-                        : `${totalTime} detik`}</p>
-                    </div>
                   </div>
                 )}
               </CardContent>

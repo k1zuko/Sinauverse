@@ -1,56 +1,113 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 
 interface UseGameTimerProps {
-  initialTime: number
+  totalTime: number
   isActive: boolean
-  onTimeUp: () => void
-  gameState: string
+  onTimeUp?: () => void
 }
 
-export function useGameTimer({ initialTime, isActive, onTimeUp, gameState }: UseGameTimerProps) {
-  const [timeLeft, setTimeLeft] = useState(initialTime)
+export function useGameTimer({ totalTime, isActive, onTimeUp }: UseGameTimerProps) {
+  const [timeLeft, setTimeLeft] = useState(totalTime)
   const [isRunning, setIsRunning] = useState(false)
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const startTimeRef = useRef<number | null>(null)
 
-  // Reset timer when initialTime changes
+  // Initialize timer
   useEffect(() => {
-    setTimeLeft(initialTime)
-    setIsRunning(isActive && gameState === 'playing')
-  }, [initialTime, isActive, gameState])
+    setTimeLeft(totalTime)
+    setIsRunning(false)
+    startTimeRef.current = null
+  }, [totalTime])
 
-  // Timer logic
+  // Start/stop timer based on isActive
   useEffect(() => {
-    if (!isRunning || timeLeft <= 0) return
+    if (isActive && !isRunning) {
+      startTimer()
+    } else if (!isActive && isRunning) {
+      stopTimer()
+    }
+  }, [isActive])
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setIsRunning(false)
-          onTimeUp()
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
+  // Timer countdown effect
+  useEffect(() => {
+    if (isRunning && timeLeft > 0) {
+      intervalRef.current = setInterval(() => {
+        setTimeLeft((prevTime) => {
+          const newTime = Math.max(prevTime - 1, 0)
 
-    return () => clearInterval(timer)
+          if (newTime === 0) {
+            stopTimer()
+            onTimeUp?.()
+          }
+
+          return newTime
+        })
+      }, 1000)
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
   }, [isRunning, timeLeft, onTimeUp])
 
-  const pauseTimer = useCallback(() => {
+  const startTimer = useCallback(() => {
+    if (!isRunning) {
+      setIsRunning(true)
+      startTimeRef.current = Date.now()
+    }
+  }, [isRunning])
+
+  const stopTimer = useCallback(() => {
     setIsRunning(false)
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
   }, [])
 
-  const resumeTimer = useCallback(() => {
-    if (timeLeft > 0 && gameState === 'playing') {
-      setIsRunning(true)
-    }
-  }, [timeLeft, gameState])
+  const resetTimer = useCallback(() => {
+    stopTimer()
+    setTimeLeft(totalTime)
+    startTimeRef.current = null
+  }, [totalTime])
+
+  const formatTime = useCallback((seconds: number) => {
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`
+  }, [])
+
+  const getTimeColor = useCallback(() => {
+    if (timeLeft <= 0) return "text-red-600"
+    const percentage = (timeLeft / totalTime) * 100
+    if (percentage > 50) return "text-green-600"
+    if (percentage > 20) return "text-yellow-600"
+    return "text-red-600"
+  }, [timeLeft, totalTime])
+
+  const getProgress = useCallback(() => {
+    return ((totalTime - timeLeft) / totalTime) * 100
+  }, [timeLeft, totalTime])
 
   return {
     timeLeft,
     isRunning,
-    pauseTimer,
-    resumeTimer
+    startTimer,
+    stopTimer,
+    resetTimer,
+    formatTime: () => formatTime(timeLeft),
+    getTimeColor,
+    getProgress,
+    isTimeUp: timeLeft === 0,
   }
 }

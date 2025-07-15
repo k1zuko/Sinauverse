@@ -2,34 +2,25 @@
 
 import { useAuth } from "@/lib/auth"
 import { useRouter } from "next/navigation"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Header } from "@/components/layout/header"
 import { LoadingSpinner } from "@/components/layout/loading-spinner"
-import { Plus, Play, Users, Trophy, Trash2, Calendar } from "lucide-react"
+import { Plus, Users, Search, Gamepad2, ChevronRight, BookOpen } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import type { Database } from "@/types/database"
 
-import Swal from "sweetalert2"
-
 type Quiz = Database["public"]["Tables"]["quizzes"]["Row"] & {
   questions: { id: string }[]
-}
-
-type GameRoom = Database["public"]["Tables"]["game_rooms"]["Row"] & {
-  quizzes: { title: string } | null
-  game_participants: { id: string }[]
 }
 
 export default function DashboardPage() {
   const { user, profile, loading } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
-  const [quizzes, setQuizzes] = useState<Quiz[]>([])
-  const [recentGames, setRecentGames] = useState<GameRoom[]>([])
   const [stats, setStats] = useState({
     totalQuizzes: 0,
     totalGames: 0,
@@ -45,7 +36,6 @@ export default function DashboardPage() {
       return
     }
 
-    // ✅ Tambahkan pengecekan data belum pernah di-load
     if (user && dataLoading) {
       fetchUserData()
     }
@@ -65,25 +55,16 @@ export default function DashboardPage() {
         .eq("creator_id", user.id)
         .order("created_at", { ascending: false })
 
-      if (quizzesData) {
-        setQuizzes(quizzesData)
-      }
-
       // Fetch recent games hosted by user
       const { data: gamesData } = await supabase
         .from("game_rooms")
         .select(`
           *,
-          quizzes (title),
           game_participants (id)
         `)
         .eq("host_id", user.id)
         .order("created_at", { ascending: false })
         .limit(5)
-
-      if (gamesData) {
-        setRecentGames(gamesData)
-      }
 
       // Calculate stats
       setStats({
@@ -103,66 +84,6 @@ export default function DashboardPage() {
     }
   }
 
-  const isDeleting = useRef(false)
-
-  const deleteQuiz = async (quizId: string) => {
-    if (isDeleting.current) {
-      console.warn("🛑 Delete sedang berjalan, abaikan klik")
-      return
-    }
-
-    const result = await Swal.fire({
-      title: "Hapus Kuis?",
-      text: "Kuis dan semua pertanyaannya akan dihapus secara permanen.",
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#e3342f",
-      cancelButtonColor: "#6c757d",
-      confirmButtonText: "Ya, hapus",
-      cancelButtonText: "Batal",
-    })
-
-    if (!result.isConfirmed) return
-
-    isDeleting.current = true // ✅ prevent double action
-
-    try {
-      // Coba delete relasi dulu kalau gak pakai cascade
-      await supabase.from("game_rooms").delete().eq("quiz_id", quizId)
-      await supabase.from("questions").delete().eq("quiz_id", quizId)
-
-      const { error } = await supabase.from("quizzes").delete().eq("id", quizId)
-
-      if (error) {
-        console.error("❌ Gagal hapus kuis:", error)
-        await Swal.fire({
-          title: "Gagal!",
-          text: "Kuis tidak bisa dihapus. Mungkin masih digunakan.",
-          icon: "error",
-        })
-      } else {
-        await Swal.fire({
-          title: "Berhasil!",
-          text: "Kuis berhasil dihapus.",
-          icon: "success",
-          timer: 1500,
-          showConfirmButton: false,
-        })
-        fetchUserData()
-      }
-    } catch (err) {
-      console.error("🔥 Error hapus kuis:", err)
-      await Swal.fire({
-        title: "Error",
-        text: "Terjadi kesalahan teknis.",
-        icon: "error",
-      })
-    } finally {
-      isDeleting.current = false // ✅ reset flag biar bisa klik lagi
-    }
-  }
-
-
   if (loading || dataLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -179,218 +100,152 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Header />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+        <div className="mb-8 animate-fade-in">
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
             Selamat datang, {profile?.full_name || profile?.username}! 👋
           </h1>
-          <p className="text-gray-600">Kelola kuis Anda dan lihat statistik permainan</p>
+          <p className="text-lg text-gray-600">Kelola kuis Anda dan mulai pembelajaran interaktif</p>
         </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
+          <Card className="rounded-xl shadow-lg border-0 bg-gradient-to-br from-purple-500 to-purple-600 text-white animate-pop-in delay-100">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Kuis</p>
-                  <p className="text-3xl font-bold text-gray-900">{stats.totalQuizzes}</p>
+                  <p className="text-sm font-medium text-purple-100">Total Kuis</p>
+                  <p className="text-4xl font-bold">{stats.totalQuizzes}</p>
                 </div>
-                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <Trophy className="w-6 h-6 text-purple-600" />
+                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center shadow-md">
+                  <BookOpen className="w-8 h-8 text-white" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-xl shadow-lg border-0 bg-gradient-to-br from-blue-500 to-blue-600 text-white animate-pop-in delay-200">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Game Dimainkan</p>
-                  <p className="text-3xl font-bold text-gray-900">{stats.totalGames}</p>
+                  <p className="text-sm font-medium text-blue-100">Game Dimainkan</p>
+                  <p className="text-4xl font-bold">{stats.totalGames}</p>
                 </div>
-                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Play className="w-6 h-6 text-blue-600" />
+                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center shadow-md">
+                  <Gamepad2 className="w-8 h-8 text-white" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-xl shadow-lg border-0 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white animate-pop-in delay-300">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Pemain</p>
-                  <p className="text-3xl font-bold text-gray-900">{stats.totalPlayers}</p>
+                  <p className="text-sm font-medium text-emerald-100">Total Pemain</p>
+                  <p className="text-4xl font-bold">{stats.totalPlayers}</p>
                 </div>
-                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Users className="w-6 h-6 text-green-600" />
+                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center shadow-md">
+                  <Users className="w-8 h-8 text-white" />
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* My Quizzes */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Kuis Saya</CardTitle>
-                  <CardDescription>Kelola kuis yang telah Anda buat</CardDescription>
+        {/* Main Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 sm:grid-cols-2">
+          <Card className="group hover:shadow-xl transition-all duration-300 transform hover:scale-105 cursor-pointer border-0 shadow-lg">
+            <Link href="/create">
+              <CardContent className="p-6 text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:shadow-xl transition-shadow">
+                  <Plus className="w-8 h-8 text-white" />
                 </div>
-                <Button asChild>
+                <h3 className="font-bold text-lg text-gray-900 mb-2">Buat Kuis</h3>
+                <p className="text-sm text-gray-600">Buat kuis interaktif baru</p>
+                <ChevronRight className="w-5 h-5 text-gray-400 mx-auto mt-3 group-hover:text-purple-600 transition-colors" />
+              </CardContent>
+            </Link>
+          </Card>
+
+          <Card className="group hover:shadow-xl transition-all duration-300 transform hover:scale-105 cursor-pointer border-0 shadow-lg">
+            <Link href="/explore">
+              <CardContent className="p-6 text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:shadow-xl transition-shadow">
+                  <Search className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="font-bold text-lg text-gray-900 mb-2">Jelajahi Kuis</h3>
+                <p className="text-sm text-gray-600">Temukan kuis menarik</p>
+                <ChevronRight className="w-5 h-5 text-gray-400 mx-auto mt-3 group-hover:text-blue-600 transition-colors" />
+              </CardContent>
+            </Link>
+          </Card>
+
+          <Card className="group hover:shadow-xl transition-all duration-300 transform hover:scale-105 cursor-pointer border-0 shadow-lg">
+            <Link href="/join">
+              <CardContent className="p-6 text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:shadow-xl transition-shadow">
+                  <Users className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="font-bold text-lg text-gray-900 mb-2">Join Kuis</h3>
+                <p className="text-sm text-gray-600">Bergabung dengan kode</p>
+                <ChevronRight className="w-5 h-5 text-gray-400 mx-auto mt-3 group-hover:text-emerald-600 transition-colors" />
+              </CardContent>
+            </Link>
+          </Card>
+
+          <Card className="group hover:shadow-xl transition-all duration-300 transform hover:scale-105 cursor-pointer border-0 shadow-lg">
+            <Link href="/host">
+              <CardContent className="p-6 text-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:shadow-xl transition-shadow">
+                  <Gamepad2 className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="font-bold text-lg text-gray-900 mb-2">Host Kuis</h3>
+                <p className="text-sm text-gray-600">Mulai sesi pembelajaran</p>
+                <ChevronRight className="w-5 h-5 text-gray-400 mx-auto mt-3 group-hover:text-orange-600 transition-colors" />
+              </CardContent>
+            </Link>
+          </Card>
+        </div>
+
+        {/* Quick Start Section */}
+        <Card className="rounded-xl shadow-lg border-0 bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
+          <CardContent className="p-8">
+            <div className="flex flex-col md:flex-row items-center justify-between">
+              <div className="mb-6 md:mb-0">
+                <h2 className="text-2xl font-bold mb-2">Siap Memulai Pembelajaran?</h2>
+                <p className="text-indigo-100 text-lg">Buat kuis pertama Anda atau jelajahi kuis yang tersedia</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  size="lg"
+                  className="bg-white text-indigo-600 hover:bg-indigo-50 font-semibold px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition-all"
+                  asChild
+                >
                   <Link href="/create">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Buat Baru
+                    <Plus className="w-5 h-5 mr-2" />
+                    Buat Kuis
+                  </Link>
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-white text-white hover:bg-white/20 font-semibold px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition-all bg-transparent"
+                  asChild
+                >
+                  <Link href="/explore">
+                    <Search className="w-5 h-5 mr-2" />
+                    Jelajahi
                   </Link>
                 </Button>
               </div>
-            </CardHeader>
-            <CardContent>
-              {quizzes.length === 0 ? (
-                <div className="text-center py-8">
-                  <Trophy className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500 mb-4">Belum ada kuis</p>
-                  <Button asChild>
-                    <Link href="/create">Buat Kuis Pertama</Link>
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {quizzes.map((quiz) => (
-                    <div
-                      key={quiz.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900">{quiz.title}</h3>
-                        <p className="text-sm text-gray-600">
-                          {quiz.questions?.length || 0} soal • Dibuat{" "}
-                          {new Date(quiz.created_at).toLocaleDateString("id-ID")}
-                        </p>
-                        {quiz.description && <p className="text-xs text-gray-500 mt-1">{quiz.description}</p>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" asChild>
-                          <Link href={`/play/${quiz.id}`}>
-                            <Play className="w-4 h-4 mr-1" />
-                            Main
-                          </Link>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => deleteQuiz(quiz.id)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Recent Games */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Game Terbaru</CardTitle>
-              <CardDescription>Riwayat game yang baru saja dimainkan</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {recentGames.length === 0 ? (
-                <div className="text-center py-8">
-                  <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500">Belum ada game yang dimainkan</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {recentGames.map((game) => (
-                    <div
-                      key={game.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{game.quizzes?.title}</h3>
-                        <p className="text-sm text-gray-600">
-                          Kode: {game.room_code} • {game.game_participants?.length || 0} pemain • Status: {game.status}
-                        </p>
-                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(game.created_at).toLocaleString("id-ID")}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {game.status === "waiting" && (
-                          <Button size="sm" asChild>
-                            <Link href={`/host/${game.id}`}>Lanjutkan</Link>
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="mt-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Aksi Cepat</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button className="h-20 text-left justify-start bg-transparent hover:bg-gray-50" variant="outline" asChild>
-              <Link href="/create">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Plus className="w-6 h-6 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold">Buat Kuis Baru</p>
-                    <p className="text-sm text-gray-600">Mulai membuat kuis interaktif</p>
-                  </div>
-                </div>
-              </Link>
-            </Button>
-
-            <Button className="h-20 text-left justify-start bg-transparent hover:bg-gray-50" variant="outline" asChild>
-              <Link href="/join">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Users className="w-6 h-6 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold">Join Game</p>
-                    <p className="text-sm text-gray-600">Bergabung dengan game lain</p>
-                  </div>
-                </div>
-              </Link>
-            </Button>
-
-            <Button className="h-20 text-left justify-start bg-transparent hover:bg-gray-50" variant="outline" asChild>
-              <Link href="/demo">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                    <Play className="w-6 h-6 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold">Demo Game</p>
-                    <p className="text-sm text-gray-600">Coba fitur demo interaktif</p>
-                  </div>
-                </div>
-              </Link>
-            </Button>
-          </div>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

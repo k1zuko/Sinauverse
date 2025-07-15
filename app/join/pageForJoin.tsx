@@ -8,13 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Users, Play, BookOpen } from "lucide-react"
+import { Users, Play, BookOpen, Clock, Trophy } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 
 export default function JoinGame() {
-  const { user, loading } = useAuth()
+  const { user, profile, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
@@ -55,7 +55,8 @@ export default function JoinGame() {
           quizzes (
             id,
             title,
-            description
+            description,
+            total_time
           )
         `)
         .eq("room_code", code)
@@ -137,7 +138,8 @@ export default function JoinGame() {
       const { error: joinError } = await supabase.from("game_participants").insert({
         room_id: room.id,
         user_id: user!.id,
-        nickname: nickname.trim(),
+        nickname: profile?.username,
+        fullname: profile?.full_name,
       })
 
       if (joinError) {
@@ -146,11 +148,6 @@ export default function JoinGame() {
         setJoining(false)
         return
       }
-
-      toast({
-        title: "Berhasil bergabung!",
-        description: `Bergabung ke room ${roomCode} sebagai ${nickname}`,
-      })
 
       // Redirect to game page
       router.push(`/game/${room.id}`)
@@ -186,10 +183,15 @@ export default function JoinGame() {
     }
   }
 
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60)
+    return `${minutes} menit`
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-2xl">Loading...</div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-pink-500 flex items-center justify-center">
+        <div className="text-2xl text-white font-semibold">Loading...</div>
       </div>
     )
   }
@@ -201,9 +203,9 @@ export default function JoinGame() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-pink-500">
       {/* Header */}
-      <header className="relative z-10 px-4 lg:px-6 h-16 flex items-center bg-white/10 backdrop-blur-sm">
-        <Link href="/dashboard" className="flex items-center gap-2 text-white hover:text-white/80">
-          <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
+      <header className="relative z-10 px-4 lg:px-6 h-16 flex items-center bg-black/20 backdrop-blur-sm">
+        <Link href="/dashboard" className="flex items-center gap-2 text-white hover:text-white/80 transition-colors">
+          <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-lg">
             <Play className="w-5 h-5 text-purple-600 fill-current" />
           </div>
           <span className="font-bold text-xl">Sinauverse</span>
@@ -212,25 +214,29 @@ export default function JoinGame() {
 
       <div className="flex items-center justify-center min-h-[calc(100vh-4rem)] p-4">
         <div className="w-full max-w-md">
-          <Card className="border-0 shadow-2xl">
-            <CardHeader className="text-center">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Users className="w-8 h-8 text-white" />
+          <Card className="border-0 shadow-2xl backdrop-blur-sm bg-white/95">
+            <CardHeader className="text-center pb-6">
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl">
+                <Users className="w-10 h-10 text-white" />
               </div>
-              <CardTitle className="text-2xl">Bergabung ke Game</CardTitle>
-              <CardDescription>Masukkan kode room untuk bergabung</CardDescription>
+              <CardTitle className="text-3xl font-bold text-gray-900">Bergabung ke Kuis</CardTitle>
+              <CardDescription className="text-gray-600 text-lg">
+                Masukkan kode room untuk bergabung ke sesi pembelajaran
+              </CardDescription>
             </CardHeader>
 
             <CardContent className="space-y-6">
               {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
+                <Alert variant="destructive" className="border-red-200 bg-red-50">
+                  <AlertDescription className="text-red-800 font-medium">{error}</AlertDescription>
                 </Alert>
               )}
 
               {/* Room Code Input */}
-              <div className="space-y-2">
-                <Label htmlFor="roomCode">Kode Room</Label>
+              <div className="space-y-3">
+                <Label htmlFor="roomCode" className="text-gray-700 font-semibold">
+                  Kode Room
+                </Label>
                 <Input
                   id="roomCode"
                   type="text"
@@ -238,57 +244,73 @@ export default function JoinGame() {
                   value={roomCode}
                   onChange={(e) => handleRoomCodeChange(e.target.value)}
                   maxLength={6}
-                  className="text-center text-2xl font-bold tracking-widest uppercase"
+                  className="text-center text-3xl font-bold tracking-widest uppercase h-16 border-2 border-gray-300 focus:border-blue-500 bg-gray-50"
                 />
               </div>
 
               {/* Room Info */}
               {roomInfo && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="flex items-center gap-3 mb-2">
-                    {getModeIcon(roomInfo.mode)}
-                    <div>
-                      <h3 className="font-semibold text-green-800">{roomInfo.quizzes.title}</h3>
-                      <p className="text-sm text-green-600">{getModeDescription(roomInfo.mode)}</p>
+                <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 shadow-lg">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-4 mb-4">
+                      {getModeIcon(roomInfo.mode)}
+                      <div className="flex-1">
+                        <h3 className="text-xl font-bold text-green-800 mb-1">{roomInfo.quizzes.title}</h3>
+                        <p className="text-green-600 font-medium">{getModeDescription(roomInfo.mode)}</p>
+                      </div>
                     </div>
-                  </div>
-                  <p className="text-sm text-green-700">{roomInfo.quizzes.description}</p>
-                </div>
-              )}
 
-              {/* Nickname Input */}
-              <div className="space-y-2">
-                <Label htmlFor="nickname">Nickname</Label>
-                <Input
-                  id="nickname"
-                  type="text"
-                  placeholder="Nama yang akan ditampilkan"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  maxLength={20}
-                />
-              </div>
+                    <div className="bg-white/70 rounded-lg p-4 mb-4">
+                      <p className="text-green-700 mb-3">{roomInfo.quizzes.description}</p>
+                      <div className="flex items-center gap-4 text-sm text-green-600">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-4 h-4" />
+                          <span>{formatTime(roomInfo.quizzes.total_time || 300)}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Trophy className="w-4 h-4" />
+                          <span>Room: {roomInfo.room_code}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-center">
+                      <div className="inline-flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold">
+                        ✓ Room ditemukan dan siap untuk bergabung
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Join Button */}
               <Button
                 onClick={joinGame}
                 disabled={joining || !roomCode || !nickname.trim() || roomCode.length !== 6}
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 h-14 text-lg font-bold shadow-lg hover:shadow-xl transition-all"
                 size="lg"
               >
-                {joining ? "Bergabung..." : "Bergabung ke Game"}
+                {joining ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3"></div>
+                    Bergabung...
+                  </>
+                ) : (
+                  <>
+                    <Users className="w-5 h-5 mr-2" />
+                    Bergabung ke Kuis
+                  </>
+                )}
               </Button>
 
-              {/* Instructions */}
-              <div className="text-center text-sm text-gray-600 space-y-2">
-                <p>Kode room terdiri dari 6 karakter</p>
-                <p>Pastikan game belum dimulai untuk bisa bergabung</p>
-              </div>
-
               {/* Back Button */}
-              <div className="text-center">
-                <Button variant="ghost" onClick={() => router.push("/dashboard")}>
-                  Kembali ke Dashboard
+              <div className="text-center pt-4">
+                <Button
+                  variant="ghost"
+                  onClick={() => router.push("/dashboard")}
+                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                >
+                  ← Kembali ke Dashboard
                 </Button>
               </div>
             </CardContent>

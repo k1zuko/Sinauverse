@@ -55,7 +55,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400">
+    <div className="min-h-screen bg-gradient-to-br from-purple-700 via-fuchsia-600 to-pink-500">
       {/* Back Button */}
       <div className="absolute top-4 left-4 z-10">
         <Button variant="ghost" size="sm" asChild className="text-white hover:bg-white/20">
@@ -67,34 +67,36 @@ export default function LoginPage() {
       </div>
 
       <div className="flex items-center justify-center min-h-screen p-4">
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-md animate-fade-in">
           {/* Header */}
           <div className="text-center mb-8">
             <Link href="/" className="inline-flex items-center gap-2 mb-4">
-              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
-                <Play className="w-6 h-6 text-purple-600 fill-current" />
+              <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center shadow-lg">
+                <Play className="w-7 h-7 text-purple-600 fill-current" />
               </div>
-              <span className="text-white font-bold text-2xl">Sinauverse</span>
+              <span className="text-white font-bold text-3xl drop-shadow-md">Sinauverse</span>
             </Link>
-            <h1 className="text-3xl font-bold text-white mb-2">Selamat Datang Kembali!</h1>
-            <p className="text-white/80">Masuk ke akun Anda untuk melanjutkan</p>
+            <h1 className="text-3xl font-bold text-white mb-2 drop-shadow-md">Selamat Datang Kembali!</h1>
+            <p className="text-white/80 text-lg">Masuk ke akun Anda untuk melanjutkan</p>
           </div>
 
-          <Card className="border-0 shadow-2xl">
-            <CardHeader className="space-y-1">
-              <CardTitle className="text-2xl text-center">Masuk</CardTitle>
-              <CardDescription className="text-center">Masukkan email dan password Anda</CardDescription>
+          <Card className="border-0 shadow-2xl rounded-xl">
+            <CardHeader className="space-y-1 text-center pt-8">
+              <CardTitle className="text-2xl font-bold text-gray-900">Masuk</CardTitle>
+              <CardDescription className="text-base text-gray-600">Masukkan email dan password Anda</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-5">
                 {error && (
-                  <Alert variant="destructive">
+                  <Alert variant="destructive" className="animate-pop-in">
                     <AlertDescription>{error}</AlertDescription>
                   </Alert>
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email" className="font-semibold">
+                    Email
+                  </Label>
                   <Input
                     id="email"
                     type="email"
@@ -103,11 +105,14 @@ export default function LoginPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     disabled={loading}
+                    className="p-3 rounded-lg border-2 border-purple-300 focus:border-purple-500 transition-all shadow-sm"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password" className="font-semibold">
+                    Password
+                  </Label>
                   <div className="relative">
                     <Input
                       id="password"
@@ -117,12 +122,13 @@ export default function LoginPage() {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       disabled={loading}
+                      className="p-3 rounded-lg border-2 border-purple-300 focus:border-purple-500 transition-all shadow-sm"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-gray-500 hover:text-gray-700"
                       onClick={() => setShowPassword(!showPassword)}
                       disabled={loading}
                     >
@@ -131,7 +137,11 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700" disabled={loading}>
+                <Button
+                  type="submit"
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white text-lg py-6 rounded-full font-bold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                  disabled={loading}
+                >
                   {loading ? (
                     <>
                       <LoadingSpinner size="sm" />

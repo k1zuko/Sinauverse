@@ -11,10 +11,10 @@ export const metadata: Metadata = {
   title: "Sinauverse - Interactive Learning Platform",
   description: "Create and play interactive quizzes with friends and colleagues",
   icons: {
-    icon: '/favicon.ico'
+    icon: "/favicon.ico",
   },
   keywords: ["quiz", "education", "learning", "interactive", "multiplayer"],
-    generator: 'v0.dev'
+  generator: "v0.dev",
 }
 
 export default function RootLayout({
@@ -24,7 +24,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={inter.className + "min-h-screen w-full overflow-x-hidden"}>
         <AuthProvider>
           {children}
           <Toaster />
